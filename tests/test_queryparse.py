@@ -51,6 +51,15 @@ def test_llm_failure_falls_back_to_heuristic(mock_llm):
 
 
 @patch("lib.queryparse.chat_json")
+def test_empty_query_returns_empty_plan_without_llm(mock_llm):
+    parse_query.cache_clear()
+    plan = parse_query("   ")
+    assert plan.subject == ""
+    assert plan.terms == []
+    mock_llm.assert_not_called()
+
+
+@patch("lib.queryparse.chat_json")
 def test_parse_is_cached(mock_llm):
     mock_llm.return_value = _LLM_OK
     parse_query.cache_clear()

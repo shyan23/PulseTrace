@@ -61,7 +61,7 @@ NOISE_WORDS = frozenset({
 })
 
 
-def _singularize(token: str) -> str | None:
+def singularize(token: str) -> str | None:
     """Conservative singular form so `headphones` matches a `headphone` query."""
     if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
         return token[:-1]
@@ -75,7 +75,7 @@ def tokenize(text: str) -> set[str]:
     for t in tokens:
         if t in SYNONYMS:
             expanded.update(SYNONYMS[t])
-        singular = _singularize(t)
+        singular = singularize(t)
         if singular:
             expanded.add(singular)
     return expanded
@@ -85,7 +85,7 @@ def _normalize_phrase(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
 
 
-def _is_generic_token(token: str) -> bool:
+def is_generic_token(token: str) -> bool:
     """Bare numbers / years carry recency scope, not subject identity."""
     return token.isdigit()
 
@@ -103,7 +103,7 @@ def token_overlap_relevance(query: str, text: str) -> float:
 
     informative_q = {t for t in q_tokens
                      if t not in LOW_SIGNAL_QUERY_TOKENS
-                     and not _is_generic_token(t)} or q_tokens
+                     and not is_generic_token(t)} or q_tokens
     coverage = overlap / len(q_tokens)
     informative_overlap = len(informative_q & t_tokens) / len(informative_q)
     precision = overlap / (min(len(t_tokens), len(q_tokens) + 4) or 1)

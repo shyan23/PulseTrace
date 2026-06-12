@@ -15,8 +15,8 @@ from .relevance import (
     Term,
     extract_core_subject,
     tokenize,
-    _is_generic_token,
-    _singularize,
+    is_generic_token,
+    singularize,
 )
 
 
@@ -49,9 +49,9 @@ def _heuristic_plan(raw: str) -> QueryPlan:
     subject = extract_core_subject(raw) or raw
     terms: list[Term] = []
     for tok in tokenize(subject):
-        weight = 0.05 if _is_generic_token(tok) else 1.0
+        weight = 0.05 if is_generic_token(tok) else 1.0
         variants = [tok]
-        sing = _singularize(tok)
+        sing = singularize(tok)
         if sing:
             variants.append(sing)
         terms.append(Term(tok, weight, required=False, variants=variants))
