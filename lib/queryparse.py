@@ -60,6 +60,8 @@ def _heuristic_plan(raw: str) -> QueryPlan:
 
 @lru_cache(maxsize=256)
 def parse_query(raw: str) -> QueryPlan:
+    # Cached by raw string; callers MUST treat the returned QueryPlan as read-only
+    # (mutating plan.terms/entities would poison the cache for the same query).
     raw = (raw or "").strip()
     if not raw:
         return QueryPlan(subject="", terms=[], entities=[], stance="")

@@ -37,7 +37,7 @@ def test_generic_only_match_capped_low():
 
 def test_year_only_match_below_relevance_floor():
     # bare year is generic recency scope, not a subject token; a post sharing
-    # only the year must stay below the agent gate (REL_FLOOR = 0.12)
+    # only the year must score low (legacy heuristic, kept for the rerank path)
     s = token_overlap_relevance(
         "budget friendly headphone 2026",
         "AITA for keeping a collection of MTG cards wrongly gifted to me in 2026",

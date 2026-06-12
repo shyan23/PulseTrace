@@ -110,8 +110,8 @@ def token_overlap_relevance(query: str, text: str) -> float:
 
     base = 0.55 * (coverage ** 1.35) + 0.25 * informative_overlap + 0.20 * precision
 
-    # Only generic query words (years, low-signal terms) matched -> keep below
-    # the agent gate (REL_FLOOR = 0.12) so year-only noise is filtered, not kept.
+    # Only generic query words (years, low-signal terms) matched -> keep the score
+    # low. This function now feeds rerank ranking only; weighted_relevance is the gate.
     if informative_q and not (informative_q & t_tokens):
         return round(min(0.10, base), 2)
 
@@ -161,9 +161,10 @@ def weighted_relevance(terms: list[Term], text: str) -> float:
     if not terms:
         return 0.5
     tokens = tokenize(text)
-    for r in terms:
-        if r.required and not (_variant_tokens(r) & tokens):
+    term_tokens = [_variant_tokens(t) for t in terms]
+    for t, tt in zip(terms, term_tokens):
+        if t.required and not (tt & tokens):
             return 0.0
     total = sum(t.weight for t in terms) or 1.0
-    matched = sum(t.weight for t in terms if _variant_tokens(t) & tokens)
+    matched = sum(t.weight for t, tt in zip(terms, term_tokens) if tt & tokens)
     return round(matched / total, 3)
