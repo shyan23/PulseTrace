@@ -3,6 +3,8 @@ from lib.relevance import (
     token_overlap_relevance,
     extract_core_subject,
     extract_compound_terms,
+    Term,
+    weighted_relevance,
 )
 
 
@@ -80,9 +82,6 @@ def test_extract_compound_terms_hyphen_and_titlecase():
     terms = extract_compound_terms("Claude Code with multi-agent setup")
     assert "multi-agent" in terms
     assert "Claude Code" in terms
-
-
-from lib.relevance import Term, weighted_relevance
 
 
 def _plan():
