@@ -6,15 +6,18 @@ from lib.relevance import Term, weighted_relevance
 _FIXTURE = Path("data/runs/1781288869-8922e8/posts.json")
 
 # Hand-built plan mirroring what parse_query yields for the failing topic.
+# "value" is deliberately NOT a budget variant: it matches off-topic posts
+# ("PS Plus value", "cardboard ... value") that have no audio content, which is
+# exactly the kind of leak the weighted gate must reject at the production floor.
 _PLAN = [
-    Term("budget", 0.6, False, ["budget", "cheap", "affordable", "value"]),
+    Term("budget", 0.6, False, ["budget", "cheap", "affordable"]),
     Term("headphone", 0.9, False,
          ["headphone", "headphones", "headset", "earbud", "earbuds", "cans"]),
     Term("2026", 0.05, False, ["2026"]),
 ]
 
 _JUNK = ("AITA", "MTG", "long hairs", "PS Plus", "PS5", "cardboard")
-_REL_FLOOR = 0.45
+_REL_FLOOR = 0.30  # matches lib.agent.REL_FLOOR
 
 
 def _posts():
@@ -35,3 +38,9 @@ def test_real_headphone_posts_survive():
     joined = " ".join(survivors).lower()
     assert "soundcore" in joined
     assert any("headphone" in t.lower() for t in survivors)
+
+
+def test_fixture_floor_matches_production_gate():
+    # the fixture only proves anything if it gates at the SAME floor the agent uses
+    from lib.agent import REL_FLOOR
+    assert _REL_FLOOR == REL_FLOOR
