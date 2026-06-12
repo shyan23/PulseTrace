@@ -48,7 +48,6 @@ def run_graph_streamed(
     topic: str,
     sources: list[str],
     run_id: str,
-    opinion: str | None = None,
     bus: _Bus = BUS,
     graph: _Graph | None = None,
 ) -> dict[str, Any]:
@@ -61,7 +60,7 @@ def run_graph_streamed(
     summary: dict[str, Any] = {}
     try:
         for step in g.stream(
-            initial_state(topic, sources, run_id, opinion),
+            initial_state(topic, sources, run_id),
             {"configurable": {"thread_id": run_id}},
         ):
             for node, update in step.items():

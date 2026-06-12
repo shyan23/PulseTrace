@@ -44,8 +44,7 @@ def crawl(state: AgentState) -> AgentState:
     sources = state.get("sources") or ["facebook"]
     run_id = state.get("run_id")
     try:
-        run_agent(topic, sources, run_id=run_id,
-                  opinion=state.get("opinion"), close_bus=False)
+        run_agent(topic, sources, run_id=run_id, close_bus=False)
         return AgentState(items=load_run_posts(run_id), error=None)
     except Exception as exc:  # pipeline failure must not crash the graph
         return AgentState(error=str(exc))

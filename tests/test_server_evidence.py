@@ -9,12 +9,12 @@ def _client():
     return srv.app.test_client()
 
 
-def test_run_passes_opinion_to_agent(monkeypatch):
+def test_run_starts_agent_without_opinion(monkeypatch):
     seen = {}
 
-    def fake_run(topic, sources, run_id=None, opinion=None):
-        seen["opinion"] = opinion
-        return run_id or "rid"
+    def fake_run(topic, sources, run_id=None):
+        seen["topic"] = topic
+        seen["sources"] = sources
 
     monkeypatch.setattr(srv, "run_agent", fake_run)
     def _fake_thread(target, daemon=None):
@@ -25,10 +25,10 @@ def test_run_passes_opinion_to_agent(monkeypatch):
 
     monkeypatch.setattr(srv.threading, "Thread", _fake_thread)
     c = _client()
-    r = c.post("/run", json={"topic": "Elden Ring", "sources": ["reddit"],
-                             "opinion": "I want to play it"})
+    r = c.post("/run", json={"topic": "Elden Ring", "sources": ["reddit"]})
     assert r.status_code == 200
-    assert seen["opinion"] == "I want to play it"
+    assert seen["topic"] == "Elden Ring"
+    assert seen["sources"] == ["reddit"]
 
 
 def test_evidence_endpoint_serves_json(tmp_path, monkeypatch):

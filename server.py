@@ -368,7 +368,6 @@ def start_run():
         if not (byok.get("api_key") or "").strip():
             return jsonify({"error": "api_key required when byok set"}), 400
 
-    opinion = (data.get("opinion") or "").strip() or None
     run_id = new_run_id()
     from lib.store import set_run_owner
     set_run_owner(run_id, _owner())
@@ -376,7 +375,7 @@ def start_run():
     def go():
         prior = _byok_apply(byok)
         try:
-            run_agent(topic, sources, run_id=run_id, opinion=opinion)
+            run_agent(topic, sources, run_id=run_id)
         except Exception as e:
             BUS.publish(run_id, {"type": "error", "err": str(e)})
         finally:
@@ -394,7 +393,6 @@ def start_orchestration_run():
     data = request.get_json(force=True, silent=True) or {}
     topic = (data.get("topic") or "").strip()
     sources = data.get("sources") or ["reddit"]
-    opinion = (data.get("opinion") or "").strip() or None
     byok = data.get("byok") or None
     if not topic:
         return jsonify({"error": "topic required"}), 400
@@ -417,7 +415,7 @@ def start_orchestration_run():
     def go() -> None:
         prior = _byok_apply(byok)
         try:
-            run_graph_streamed(topic, sources, run_id, opinion=opinion)
+            run_graph_streamed(topic, sources, run_id)
         except Exception as e:
             BUS.publish(run_id, {"type": "orch_error", "err": str(e)})
             BUS.close(run_id)
