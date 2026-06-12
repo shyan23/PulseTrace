@@ -7,6 +7,16 @@ rank posts against the *original topic* instead of ranking on engagement alone.
 """
 from __future__ import annotations
 import re
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Term:
+    term: str
+    weight: float
+    required: bool = False
+    variants: list[str] = field(default_factory=list)
+
 
 STOPWORDS = frozenset({
     "the", "a", "an", "to", "for", "how", "is", "in", "of", "on", "and", "with",
@@ -137,3 +147,23 @@ def extract_compound_terms(topic: str) -> list[str]:
     for m in re.finditer(r"(?:[A-Z][a-z]+\s+){1,}[A-Z][a-z]+", topic):
         terms.append(m.group())
     return terms
+
+
+def _variant_tokens(term: Term) -> set[str]:
+    toks: set[str] = set()
+    for v in [term.term, *term.variants]:
+        toks |= tokenize(v)
+    return toks
+
+
+def weighted_relevance(terms: list[Term], text: str) -> float:
+    """Hard-required gate + soft weighted coverage, in [0.0, 1.0]."""
+    if not terms:
+        return 0.5
+    tokens = tokenize(text)
+    for r in terms:
+        if r.required and not (_variant_tokens(r) & tokens):
+            return 0.0
+    total = sum(t.weight for t in terms) or 1.0
+    matched = sum(t.weight for t in terms if _variant_tokens(t) & tokens)
+    return round(matched / total, 3)

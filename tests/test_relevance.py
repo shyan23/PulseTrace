@@ -80,3 +80,41 @@ def test_extract_compound_terms_hyphen_and_titlecase():
     terms = extract_compound_terms("Claude Code with multi-agent setup")
     assert "multi-agent" in terms
     assert "Claude Code" in terms
+
+
+from lib.relevance import Term, weighted_relevance
+
+
+def _plan():
+    return [
+        Term("wireless", 0.9, True, ["wireless", "bluetooth", "bt"]),
+        Term("headphone", 0.9, False, ["headphone", "headphones", "headset", "cans"]),
+        Term("2026", 0.05, False, ["2026"]),
+    ]
+
+
+def test_weighted_hard_drop_when_required_absent():
+    assert weighted_relevance(_plan(), "best wired audiophile headphones 2026") == 0.0
+
+
+def test_weighted_variant_satisfies_required():
+    s = weighted_relevance(_plan(), "Bose QC bluetooth headphones, great in 2026")
+    assert s >= 0.9
+
+
+def test_weighted_year_only_is_zero():
+    assert weighted_relevance(_plan(), "AITA for keeping MTG cards gifted in 2026") == 0.0
+
+
+def test_weighted_soft_partial_when_noun_misses():
+    s = weighted_relevance(_plan(), "wireless bluetooth speaker review 2026")
+    assert 0.0 < s < 0.9
+
+
+def test_weighted_required_late_in_body_counts():
+    s = weighted_relevance(_plan(), "Long review of headphones. Finally, they are wireless.")
+    assert s >= 0.9
+
+
+def test_weighted_empty_plan_is_neutral():
+    assert weighted_relevance([], "anything") == 0.5
