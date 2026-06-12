@@ -33,6 +33,25 @@ def test_generic_only_match_capped_low():
     assert s <= 0.3
 
 
+def test_year_only_match_below_relevance_floor():
+    # bare year is generic recency scope, not a subject token; a post sharing
+    # only the year must stay below the agent gate (REL_FLOOR = 0.12)
+    s = token_overlap_relevance(
+        "budget friendly headphone 2026",
+        "AITA for keeping a collection of MTG cards wrongly gifted to me in 2026",
+    )
+    assert s < 0.12
+
+
+def test_plural_post_matches_singular_query_subject():
+    # singular topic subject must still match plural post wording
+    s = token_overlap_relevance(
+        "budget friendly headphone 2026",
+        "Soundcore Space 2 - The Best Value Headphones of 2026",
+    )
+    assert s >= 0.12
+
+
 def test_empty_query_is_neutral():
     assert token_overlap_relevance("", "anything here") == 0.5
 

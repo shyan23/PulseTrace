@@ -51,6 +51,13 @@ NOISE_WORDS = frozenset({
 })
 
 
+def _singularize(token: str) -> str | None:
+    """Conservative singular form so `headphones` matches a `headphone` query."""
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return None
+
+
 def tokenize(text: str) -> set[str]:
     words = re.sub(r"[^\w\s]", " ", text.lower()).split()
     tokens = {w for w in words if w not in STOPWORDS and len(w) > 1}
@@ -58,11 +65,19 @@ def tokenize(text: str) -> set[str]:
     for t in tokens:
         if t in SYNONYMS:
             expanded.update(SYNONYMS[t])
+        singular = _singularize(t)
+        if singular:
+            expanded.add(singular)
     return expanded
 
 
 def _normalize_phrase(text: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+def _is_generic_token(token: str) -> bool:
+    """Bare numbers / years carry recency scope, not subject identity."""
+    return token.isdigit()
 
 
 def token_overlap_relevance(query: str, text: str) -> float:
@@ -76,16 +91,19 @@ def token_overlap_relevance(query: str, text: str) -> float:
         return 0.0
     overlap = len(overlap_tokens)
 
-    informative_q = {t for t in q_tokens if t not in LOW_SIGNAL_QUERY_TOKENS} or q_tokens
+    informative_q = {t for t in q_tokens
+                     if t not in LOW_SIGNAL_QUERY_TOKENS
+                     and not _is_generic_token(t)} or q_tokens
     coverage = overlap / len(q_tokens)
     informative_overlap = len(informative_q & t_tokens) / len(informative_q)
     precision = overlap / (min(len(t_tokens), len(q_tokens) + 4) or 1)
 
     base = 0.55 * (coverage ** 1.35) + 0.25 * informative_overlap + 0.20 * precision
 
-    # Only generic query words matched -> keep below the relevance floor.
+    # Only generic query words (years, low-signal terms) matched -> keep below
+    # the agent gate (REL_FLOOR = 0.12) so year-only noise is filtered, not kept.
     if informative_q and not (informative_q & t_tokens):
-        return round(min(0.24, base), 2)
+        return round(min(0.10, base), 2)
 
     phrase_bonus = 0.0
     nq = _normalize_phrase(query)
