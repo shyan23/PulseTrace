@@ -15,7 +15,6 @@ function onEnterApp() {
 function blankDashboard() {
   runId = null;
   $("#topic").value = "";
-  $("#opinion").value = "";
   clearNode($("#clusters"));
   if (sentChart) { sentChart.destroy(); sentChart = null; }
   if (cy) { cy.destroy(); cy = null; }
@@ -56,8 +55,7 @@ async function start() {
   
   // If neither user has key nor server has default, show BYOK page
   if (!hasUserKey && !hasServerKey) {
-    const opinion = ($("#opinion").value || "").trim() || null;
-    setPendingSearch(topic, sources, opinion);
+    setPendingSearch(topic, sources);
     goto("byok");
     return;
   }
@@ -68,8 +66,7 @@ async function start() {
   { const h = $("#graphHint"); if (h) h.classList.remove("hidden"); }
   if (sentChart) { sentChart.destroy(); sentChart = null; }
   log("Starting run for \"" + topic + "\" on [" + sources.join(", ") + "]...");
-  const opinion = ($("#opinion").value || "").trim() || null;
-  const body = { topic, sources, opinion };
+  const body = { topic, sources };
   if (hasUserKey) body.byok = byok;
   const r = await fetch("/api/agent/run", {
     method: "POST",

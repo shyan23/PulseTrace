@@ -129,9 +129,9 @@ $("#byok-clear").addEventListener("click", clearByok);
    navigate to BYOK view. After key validation, resume the search. */
 const PENDING_SEARCH_LS_KEY = "pulsetrace.pending_search.v1";
 
-function setPendingSearch(topic, sources, opinion) {
+function setPendingSearch(topic, sources) {
   try {
-    localStorage.setItem(PENDING_SEARCH_LS_KEY, JSON.stringify({ topic, sources, opinion }));
+    localStorage.setItem(PENDING_SEARCH_LS_KEY, JSON.stringify({ topic, sources }));
   } catch (e) {}
 }
 
@@ -157,7 +157,6 @@ async function resumePendingSearch() {
   
   // Restore search fields
   $("#topic").value = pending.topic || "";
-  $("#opinion").value = pending.opinion || "";
   
   // Restore source checkboxes
   const sources = pending.sources || [];
