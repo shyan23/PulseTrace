@@ -3,61 +3,63 @@ from unittest.mock import patch
 from lib import agent
 
 
-def test_seed_neutral_prompt_when_no_opinion():
-    captured = {}
-
-    def fake(system, user, **kw):
-        captured["system"] = system
-        return {"queries": ["a", "b"]}
-
-    with patch("lib.agent.chat_json", side_effect=fake):
-        qs = agent._llm_seed("Elden Ring", opinion=None)
-    assert qs == ["a", "b"]
-    assert "opinion" not in captured["system"].lower()
-
-
-def test_seed_biases_pro_con_when_opinion_present():
+def test_seed_balanced_prompt_covers_three_stances():
     captured = {}
 
     def fake(system, user, **kw):
         captured["system"] = system
         captured["user"] = user
-        return {"queries": ["a"]}
+        return {"queries": ["a", "b", "c"]}
 
     with patch("lib.agent.chat_json", side_effect=fake):
-        agent._llm_seed("Elden Ring", opinion="I want to play it")
-    blob = (captured["system"] + captured["user"]).lower()
-    assert "support" in blob and ("challeng" in blob or "against" in blob)
+        qs = agent._llm_seed("Elden Ring", [])
+    assert qs == ["a", "b", "c"]
+    blob = captured["system"].lower()
+    assert "positive" in blob or "praise" in blob
+    assert "negative" in blob or "complaint" in blob
+    assert "neutral" in blob or "comparison" in blob
 
 
-def test_seed_falls_back_to_topic_on_llm_error():
-    with patch("lib.agent.chat_json", side_effect=RuntimeError("x")):
-        assert agent._llm_seed("Topic", opinion=None) == ["Topic"]
+def test_seed_includes_entities_in_user_prompt():
+    captured = {}
+
+    def fake(system, user, **kw):
+        captured["user"] = user
+        return {"queries": ["q1"]}
+
+    with patch("lib.agent.chat_json", side_effect=fake):
+        agent._llm_seed("headphones", ["Sony", "Bose"])
+    assert "Sony" in captured["user"]
+    assert "Bose" in captured["user"]
 
 
-def test_seed_caps_neutral_at_5_opinion_at_6():
+def test_seed_no_entities_omits_entity_line():
+    captured = {}
+
+    def fake(system, user, **kw):
+        captured["user"] = user
+        return {"queries": ["q1"]}
+
+    with patch("lib.agent.chat_json", side_effect=fake):
+        agent._llm_seed("headphones", [])
+    assert "entities" not in captured["user"].lower()
+
+
+def test_seed_falls_back_to_subject_on_llm_error():
+    with patch("lib.agent.chat_json", side_effect=ValueError("bad json")):
+        assert agent._llm_seed("Topic", []) == ["Topic"]
+
+
+def test_seed_caps_at_6_queries():
     def fake(system, user, **kw):
         return {"queries": [f"q{i}" for i in range(10)]}
 
     with patch("lib.agent.chat_json", side_effect=fake):
-        assert len(agent._llm_seed("T", opinion=None)) == 5
-        assert len(agent._llm_seed("T", opinion="x")) == 6
+        result = agent._llm_seed("Elden Ring", [])
+    assert len(result) == 6
 
 
-def test_next_injects_opinion_framing():
-    captured = {}
-
-    def fake(system, user, **kw):
-        captured["system"] = system
-        return {"action": "expand", "queries": ["q"]}
-
-    with patch("lib.agent.chat_json", side_effect=fake):
-        agent._llm_next("Elden Ring", ["combat"], opinion="I want to play it")
-    blob = captured["system"].lower()
-    assert "opinion" in blob and ("support" in blob or "challenge" in blob)
-
-
-def test_next_neutral_has_no_opinion():
+def test_next_has_no_opinion_framing():
     captured = {}
 
     def fake(system, user, **kw):
@@ -65,5 +67,24 @@ def test_next_neutral_has_no_opinion():
         return {"action": "stop", "queries": []}
 
     with patch("lib.agent.chat_json", side_effect=fake):
-        agent._llm_next("Elden Ring", ["combat"], opinion=None)
+        agent._llm_next("Elden Ring", ["combat"])
     assert "opinion" not in captured["system"].lower()
+
+
+def test_next_stop_action_returned():
+    def fake(system, user, **kw):
+        return {"action": "stop", "queries": []}
+
+    with patch("lib.agent.chat_json", side_effect=fake):
+        result = agent._llm_next("Elden Ring", ["combat"])
+    assert result["action"] == "stop"
+
+
+def test_next_expand_action_returned():
+    def fake(system, user, **kw):
+        return {"action": "expand", "queries": ["new query"]}
+
+    with patch("lib.agent.chat_json", side_effect=fake):
+        result = agent._llm_next("Elden Ring", ["combat"])
+    assert result["action"] == "expand"
+    assert "new query" in result["queries"]

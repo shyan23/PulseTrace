@@ -17,7 +17,8 @@ from .dedup import near_dupe_keep
 from .cluster import cluster_embeddings, centroids, entropy, saturation
 from .label import label_cluster
 from .stance import cluster_sentiments
-from .relevance import token_overlap_relevance, extract_core_subject
+from .relevance import weighted_relevance, extract_core_subject
+from .queryparse import parse_query, QueryPlan
 from .rerank import rank_posts, llm_rerank
 from .events import BUS
 from .store import write_json, new_run_id, is_cancelled, clear_cancel
@@ -29,10 +30,10 @@ MAX_ITERS = 4
 MAX_POSTS = 500
 EPS = 0.05
 SAT_EPS = 0.8
-REL_FLOOR = 0.12          # posts below this relevance to the topic are noise
+REL_FLOOR = 0.30          # weighted relevance below this = noise (was 0.12 token gate)
 RERANK_SHORTLIST = 30     # candidates sent to the LLM relevance reranker
 MIN_ONTOPIC = 6           # keep all posts if fewer survive the gate (recall guard)
-EXPAND_REL_FLOOR = 0.12   # drop expansion queries that drift off the core subject
+EXPAND_REL_FLOOR = 0.30   # drop expansion queries that drift off the core subject
 SOURCES: dict[str, type[Connector]] = {
     "reddit": RedditConnector,
     "hn": HNConnector,
@@ -46,44 +47,34 @@ SOURCES: dict[str, type[Connector]] = {
 }
 
 
-_SEED_NEUTRAL = (
-    "Generate 5 diverse, complementary search queries for social-media research "
-    'on the user\'s topic. Output JSON: {"queries": ["..."]}'
-)
-_SEED_OPINION = (
-    "Generate 6 diverse search queries for social-media research on the topic. "
-    "The user holds an opinion. Half the queries must seek evidence SUPPORTING "
-    "the opinion, half must seek evidence CHALLENGING / against it. "
+_SEED_BALANCED = (
+    "You generate social-media search queries for a research agent. Given a subject "
+    "and optional named entities, output queries that DELIBERATELY cover three stances "
+    "so the result set is balanced: positive/praise, negative/complaints, and neutral/"
+    "comparison. Keep every query about the subject's core; do not invent opinions. "
     'Output JSON: {"queries": ["..."]}'
 )
 
 
-def _llm_seed(topic: str, opinion: str | None = None) -> list[str]:
-    system = _SEED_OPINION if opinion else _SEED_NEUTRAL
-    cap = 6 if opinion else 5
-    user = f"Topic: {topic}"
-    if opinion:
-        user += f'\nUser opinion: "{opinion}"'
+def _llm_seed(subject: str, entities: list[str]) -> list[str]:
+    user = f"Subject: {subject}"
+    if entities:
+        user += f"\nAlso cover entities: {', '.join(entities)}"
     try:
-        out = chat_json(system, user, stage="seed")
-    except Exception:
-        return [topic]
-    qs = [str(q) for q in out.get("queries", []) if q]
-    return qs[:cap] or [topic]
+        data = chat_json(_SEED_BALANCED, user, max_tokens=300)
+        qs = [str(q) for q in data.get("queries", []) if q][:6]
+        return qs or [subject]
+    except (ValueError, KeyError, TypeError):
+        return [subject]
 
 
-def _llm_next(topic: str, labels: list[str], opinion: str | None = None) -> dict:
-    extra = (
-        f' The user opinion is "{opinion}"; prioritize under-covered angles that '
-        "could support OR challenge it."
-        if opinion else ""
-    )
+def _llm_next(topic: str, labels: list[str]) -> dict:
     system = (
         "Given cluster labels found so far and the topic, decide: stop or expand. "
         "If expand, propose up to 3 new search queries targeting under-covered "
         "angles. Every query MUST stay about the topic's core subject — do not "
         "drift to adjacent themes a label happened to surface (e.g. if the topic "
-        "is a technology, do not pivot to job-hunting or resumes)." + extra +
+        "is a technology, do not pivot to job-hunting or resumes)."
         ' Output JSON: {"action": "stop"|"expand", "queries": ["..."]}'
     )
     try:
@@ -145,10 +136,11 @@ def _fetch_all(queries: list[tuple[str, str]], limit: int,
 
 
 def run_agent(topic: str, sources: list[str], run_id: str | None = None,
-              opinion: str | None = None, close_bus: bool = True) -> str:
+              close_bus: bool = True) -> str:
     run_id = run_id or new_run_id()
     sources = [s for s in sources if s in SOURCES] or ["facebook"]
-    core = extract_core_subject(topic) or topic
+    plan = parse_query(topic)
+    core = plan.subject or extract_core_subject(topic) or topic
     started_at = int(time.time())
     clear_cancel(run_id)
     BUS.publish(run_id, {"type": "started", "run_id": run_id, "topic": topic, "sources": sources})
@@ -158,7 +150,7 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
     last_H = 0.0
     stop_reason = "budget"
 
-    seeds = _llm_seed(topic, opinion)
+    seeds = _llm_seed(plan.subject or core, plan.entities)
     BUS.publish(run_id, {"type": "seeded", "queries": seeds})
     pending = [(q, s) for q in seeds for s in sources]
     cluster_meta: list[dict] = []
@@ -207,7 +199,7 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
             posts = [posts[i] for i in keep_idx]
 
         on_topic = [p for p in posts
-                    if token_overlap_relevance(core, p.text) >= REL_FLOOR]
+                    if weighted_relevance(plan.terms, p.text) >= REL_FLOOR]
         if len(on_topic) >= MIN_ONTOPIC and len(on_topic) < len(posts):
             BUS.publish(run_id, {
                 "type": "relevance_gated",
@@ -304,13 +296,13 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
             break
         last_H = H
 
-        decision = _llm_next(topic, [c["label"] for c in cluster_meta], opinion)
+        decision = _llm_next(topic, [c["label"] for c in cluster_meta])
         if decision.get("action") == "stop":
             stop_reason = "agent_stop"
             break
         next_q = [str(q) for q in decision.get("queries", []) if q]
         anchored = [q for q in next_q
-                    if token_overlap_relevance(core, q) >= EXPAND_REL_FLOOR]
+                    if weighted_relevance(plan.terms, q) >= EXPAND_REL_FLOOR]
         next_q = (anchored or next_q)[:3]
         if not next_q:
             stop_reason = "no_queries"
@@ -375,7 +367,7 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
     except Exception as e:
         BUS.publish(run_id, {"type": "briefing_error", "err": str(e)})
     try:
-        build_evidence(run_id, opinion)
+        build_evidence(run_id, plan.stance or None)
         BUS.publish(run_id, {"type": "evidence_ready",
                              "url": f"/run/{run_id}/evidence"})
     except Exception as e:
