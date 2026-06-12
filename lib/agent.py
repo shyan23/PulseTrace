@@ -56,13 +56,13 @@ _SEED_BALANCED = (
 )
 
 
-def _llm_seed(subject: str, entities: list[str]) -> list[str]:
+def _llm_seed(subject: str, entities: list[str] | None = None) -> list[str]:
     user = f"Subject: {subject}"
     if entities:
         user += f"\nAlso cover entities: {', '.join(entities)}"
     try:
         data = chat_json(_SEED_BALANCED, user, max_tokens=300, stage="seed")
-        qs = [str(q) for q in data.get("queries", []) if q][:6]
+        qs = [str(q) for q in data.get("queries", []) if q][:5]
         return qs or [subject]
     except Exception:
         return [subject]

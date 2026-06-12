@@ -50,13 +50,13 @@ def test_seed_falls_back_to_subject_on_llm_error():
         assert agent._llm_seed("Topic", []) == ["Topic"]
 
 
-def test_seed_caps_at_6_queries():
+def test_seed_caps_at_5_queries():
     def fake(system, user, **kw):
         return {"queries": [f"q{i}" for i in range(10)]}
 
     with patch("lib.agent.chat_json", side_effect=fake):
         result = agent._llm_seed("Elden Ring", [])
-    assert len(result) == 6
+    assert len(result) == 5
 
 
 def test_next_has_no_opinion_framing():
