@@ -83,5 +83,5 @@ def parse_query(raw: str) -> QueryPlan:
             entities=[str(e) for e in data.get("entities", [])],
             stance=str(data.get("stance") or ""),
         )
-    except (ValueError, KeyError, TypeError):
+    except Exception:
         return _heuristic_plan(raw)

@@ -18,7 +18,7 @@ from .cluster import cluster_embeddings, centroids, entropy, saturation
 from .label import label_cluster
 from .stance import cluster_sentiments
 from .relevance import weighted_relevance, extract_core_subject
-from .queryparse import parse_query, QueryPlan
+from .queryparse import parse_query
 from .rerank import rank_posts, llm_rerank
 from .events import BUS
 from .store import write_json, new_run_id, is_cancelled, clear_cancel
@@ -61,10 +61,10 @@ def _llm_seed(subject: str, entities: list[str]) -> list[str]:
     if entities:
         user += f"\nAlso cover entities: {', '.join(entities)}"
     try:
-        data = chat_json(_SEED_BALANCED, user, max_tokens=300)
+        data = chat_json(_SEED_BALANCED, user, max_tokens=300, stage="seed")
         qs = [str(q) for q in data.get("queries", []) if q][:6]
         return qs or [subject]
-    except (ValueError, KeyError, TypeError):
+    except Exception:
         return [subject]
 
 

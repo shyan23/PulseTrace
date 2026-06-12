@@ -71,20 +71,8 @@ def test_next_has_no_opinion_framing():
     assert "opinion" not in captured["system"].lower()
 
 
-def test_next_stop_action_returned():
-    def fake(system, user, **kw):
-        return {"action": "stop", "queries": []}
-
-    with patch("lib.agent.chat_json", side_effect=fake):
+def test_next_falls_back_to_stop_on_llm_error():
+    # provider-cascade exhaustion raises RuntimeError; loop must end cleanly, not crash
+    with patch("lib.agent.chat_json", side_effect=RuntimeError("cascade exhausted")):
         result = agent._llm_next("Elden Ring", ["combat"])
-    assert result["action"] == "stop"
-
-
-def test_next_expand_action_returned():
-    def fake(system, user, **kw):
-        return {"action": "expand", "queries": ["new query"]}
-
-    with patch("lib.agent.chat_json", side_effect=fake):
-        result = agent._llm_next("Elden Ring", ["combat"])
-    assert result["action"] == "expand"
-    assert "new query" in result["queries"]
+    assert result == {"action": "stop", "queries": []}

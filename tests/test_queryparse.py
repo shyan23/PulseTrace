@@ -51,6 +51,16 @@ def test_llm_failure_falls_back_to_heuristic(mock_llm):
 
 
 @patch("lib.queryparse.chat_json")
+def test_runtime_error_also_falls_back(mock_llm):
+    # provider-cascade exhaustion raises RuntimeError, not just bad JSON
+    mock_llm.side_effect = RuntimeError("cascade exhausted")
+    parse_query.cache_clear()
+    plan = parse_query("best wireless headphone 2026")
+    assert plan.terms
+    assert plan.stance == ""
+
+
+@patch("lib.queryparse.chat_json")
 def test_empty_query_returns_empty_plan_without_llm(mock_llm):
     parse_query.cache_clear()
     plan = parse_query("   ")
