@@ -63,6 +63,27 @@ def test_build_writes_evidence_json_with_screens(tmp_path, monkeypatch):
     assert saved["final_assessment"]
 
 
+def test_llm_prompt_includes_post_excerpts_and_specificity(tmp_path, monkeypatch):
+    monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
+    run_id = "tx"
+    _seed_run(tmp_path, run_id)
+    captured = {}
+
+    def fake(system, user, **kw):
+        captured["system"] = system
+        captured["user"] = user
+        return _FAKE_LLM
+
+    with patch("lib.evidence.chat_json", side_effect=fake):
+        evidence.build(run_id, opinion=None)
+
+    # the analyzer must SEE the real posts so it can extract concrete specifics
+    assert "combat is amazing" in captured["user"]
+    assert "way too punishing" in captured["user"]
+    # and be instructed to name those specifics, not hedge
+    assert "specific" in captured["system"].lower()
+
+
 def test_build_neutral_when_no_opinion(tmp_path, monkeypatch):
     monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
     run_id = "t2"

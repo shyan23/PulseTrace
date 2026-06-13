@@ -38,6 +38,17 @@ _VOICE = (
     "feel or discuss and why it matters, in warm, conversational, everyday "
     "language."
 )
+_SPECIFICITY = (
+    "Ground every statement in the actual posts shown below. When the posts name "
+    "concrete specifics — people, players, products, teams, tactical or design "
+    "decisions, numbers, the exact thing being praised or criticised — NAME THEM in "
+    "the claim text and reasoning. Never flatten specifics into vague phrases like "
+    "'shows negative sentiment', 'discusses selections', or 'concerns about the "
+    "squad': state WHAT is praised or criticised and WHY, citing the concrete "
+    "detail from the posts. Generalize only when the posts truly contain no "
+    "specifics."
+)
+_URL_RE = re.compile(r"https?://\S+")
 
 _JARGON = [
     (re.compile(r"\bClusters?\s*\d+(?:\s*(?:,|and|&)\s*\d+)*\s*,?\s*", re.I), ""),
@@ -86,11 +97,11 @@ def build(run_id: str, opinion: str | None) -> dict:
     posts_raw = read_json(run_id, "posts.json") or []
     posts_by_id = {p["id"]: _to_post(p) for p in posts_raw}
 
-    llm = _llm_analyze(run.get("topic", ""), opinion, clusters)
     now = int(time.time())
     max_members = max((len(c.get("members", [])) for c in clusters), default=0)
     members_by_cid = {int(c["id"]): [posts_by_id[m] for m in c.get("members", [])
                                      if m in posts_by_id] for c in clusters}
+    llm = _llm_analyze(run.get("topic", ""), opinion, clusters, members_by_cid)
 
     claims = [_enrich_claim(c, members_by_cid, max_members, now)
               for c in llm.get("claims", [])]
@@ -135,12 +146,29 @@ def _enrich_claim(claim: dict, members_by_cid: dict[int, list[Post]],
     }
 
 
-def _llm_analyze(topic: str, opinion: str | None, clusters: list[dict]) -> dict:
-    labels = "\n".join(
-        f'- cluster {c["id"]} "{c.get("label","")}" '
-        f'(sentiment {c.get("sentiment",{})}, n={len(c.get("members",[]))}): {c.get("desc","")}'
-        for c in clusters
-    ) or "(no clusters)"
+def _cluster_digest(clusters: list[dict], members_by_cid: dict[int, list[Post]],
+                    per_cluster: int = 5, maxlen: int = 240) -> str:
+    lines: list[str] = []
+    for c in clusters:
+        cid = int(c["id"])
+        lines.append(
+            f'- group {cid} "{c.get("label","")}" '
+            f'(mood {c.get("sentiment",{})}, {len(c.get("members",[]))} posts): {c.get("desc","")}'
+        )
+        members = sorted(members_by_cid.get(cid, []),
+                         key=lambda p: p.reactions + p.comments + p.shares, reverse=True)
+        seen: set[str] = set()
+        for p in members[:per_cluster]:
+            t = " ".join(_URL_RE.sub("", p.text).split())[:maxlen]
+            if t and t not in seen:
+                seen.add(t)
+                lines.append(f'    • "{t}"')
+    return "\n".join(lines) or "(no clusters)"
+
+
+def _llm_analyze(topic: str, opinion: str | None, clusters: list[dict],
+                 members_by_cid: dict[int, list[Post]]) -> dict:
+    labels = _cluster_digest(clusters, members_by_cid)
     stance = (
         f'The user holds this opinion: "{opinion}". Split claims into "pro" '
         "(supporting the opinion) and \"con\" (challenging it). Present the "
@@ -150,11 +178,12 @@ def _llm_analyze(topic: str, opinion: str | None, clusters: list[dict]) -> dict:
     )
     system = (
         "You are an evidence analyst building a balanced, Community-Notes-style "
-        "report from social-media discussion. " + _BEHAVIOR + " " + _VOICE + " " + _SCHEMA
+        "report from social-media discussion. " + _BEHAVIOR + " " + _VOICE + " "
+        + _SPECIFICITY + " " + _SCHEMA
     )
-    user = f"Topic: {topic}\n{stance}\n\nCluster findings:\n{labels}"
+    user = f"Topic: {topic}\n{stance}\n\nWhat people are actually saying, grouped:\n{labels}"
     try:
-        out = chat_json(system, user, max_tokens=1500, stage="evidence")
+        out = chat_json(system, user, max_tokens=1800, stage="evidence")
         if not isinstance(out, dict):
             raise ValueError("non-dict")
         return out
