@@ -247,7 +247,7 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
 
         def _label(cid: int) -> dict:
             try:
-                return label_cluster([m.text for m in members_by_cid[cid][:8]])
+                return label_cluster([m.text for m in members_by_cid[cid]])
             except Exception as e:
                 return {"label": f"cluster {cid}", "desc": f"label_error: {e}"}
 
