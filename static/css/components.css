@@ -148,7 +148,8 @@
 .drawer-head h3 { margin: 8px 0 6px; font-size: 19px; font-weight: 700; color: var(--text); }
 .drawer-head .why { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 8px 0 12px; }
 .drawer-head .count { font-size: 12px; color: var(--muted); }
-.drawer-close { position: absolute; top: 16px; right: 16px; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; padding: 0; }
+.drawer-close { position: absolute; top: 16px; right: 16px; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; padding: 0; transition: border-color .15s ease, background .15s ease, color .15s ease, transform .2s cubic-bezier(0.34,1.56,0.64,1); }
+.drawer-close:hover { border-color: var(--accent2); color: var(--accent2); background: var(--panel); transform: rotate(90deg); }
 .drawer-moodbar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--border); margin: 12px 0 4px; }
 .drawer-moodbar span { display: block; height: 100%; }
 .drawer-mood-lbl { font-size: 12px; color: var(--muted); margin-top: 6px; }
@@ -193,15 +194,34 @@
 @keyframes vc-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .car-dots { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }
 .car-dots .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); cursor: pointer; transition: background 0.2s, transform 0.2s; }
+.car-dots .dot:hover { background: color-mix(in srgb, var(--accent2) 60%, var(--border)); transform: scale(1.25); }
 .car-dots .dot.on { background: var(--accent2); transform: scale(1.3); }
-.notable-item { border-left: 3px solid var(--border); padding: 10px 0 10px 14px; margin-bottom: 14px; }
-.notable-item .nq { font-size: 14px; line-height: 1.55; color: var(--text); }
-.notable-item .nwhy { font-size: 12px; color: var(--muted); margin-top: 6px; }
-.notable-item .nwhy a { color: var(--accent2); font-weight: 600; text-decoration: none; }
-.notable-item .nwhy a:hover { text-decoration: underline; }
-.notable-item.pos { border-left-color: var(--pos); }
-.notable-item.neu { border-left-color: var(--neu); }
-.notable-item.neg { border-left-color: var(--neg); }
+#voices-notable { display: flex; flex-direction: column; gap: 12px; }
+.notable-card { background: var(--panel2); border: 1px solid var(--border);
+  border-left: 3px solid var(--neu); border-radius: 14px; padding: 14px 16px;
+  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease; }
+.notable-card:hover { transform: translateY(-1px); border-color: var(--accent2);
+  box-shadow: 0 6px 18px -8px rgba(0,0,0,0.45); }
+.notable-card.pos { border-left-color: var(--pos); }
+.notable-card.neu { border-left-color: var(--neu); }
+.notable-card.neg { border-left-color: var(--neg); }
+.nb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; flex-wrap: wrap; }
+.nb-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.03em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px;
+  color: var(--text); background: color-mix(in srgb, var(--neu) 16%, transparent); }
+.nb-tag i { width: 7px; height: 7px; border-radius: 50%; background: var(--neu); }
+.nb-tag.pos { background: color-mix(in srgb, var(--pos) 16%, transparent); }
+.nb-tag.pos i { background: var(--pos); }
+.nb-tag.neg { background: color-mix(in srgb, var(--neg) 16%, transparent); }
+.nb-tag.neg i { background: var(--neg); }
+.nb-topic { font-size: 12px; color: var(--muted); }
+.nb-topic::before { content: "·"; margin-right: 8px; color: var(--border); }
+.nb-quote { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text); font-style: italic; }
+.nb-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
+  font-size: 12px; font-weight: 600; color: var(--accent2); text-decoration: none; }
+.nb-link .nb-arr { transition: transform .2s ease; }
+.nb-link:hover { text-decoration: underline; }
+.nb-link:hover .nb-arr { transform: translateX(3px); }
 @media (prefers-reduced-motion: reduce) { .voice-card, .mood-bar span { animation: none; transition: none; } }
 
 /* --- QA & Evidence --- */

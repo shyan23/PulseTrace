@@ -145,11 +145,7 @@ $("#cluster-backdrop").addEventListener("click", closeClusterDrawer);
 $("#drawer-search").addEventListener("input", (e) => paintDrawerPosts(e.target.value));
 
 const BUCKET_EMOJI = { pos: "😊", neu: "😐", neg: "😞" };
-const BUCKET_WHY = {
-  pos: "A clearly positive take",
-  neu: "A balanced or factual point",
-  neg: "A strongly critical view",
-};
+const BUCKET_LABEL = { pos: "Positive", neu: "Mixed", neg: "Critical" };
 const _reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 let _voices = [], _vIdx = 0, _vTimer = null;
 
@@ -193,14 +189,18 @@ function fillVoices(d) {
 
   const nb = $("#voices-notable"); clearNode(nb);
   for (const v of (d.notable || [])) {
-    const why = BUCKET_WHY[v.bucket] || "Worth a look";
-    const item = elem("div", { class: "notable-item " + (v.bucket || "neu") },
-      elem("div", { class: "nq" }, "“" + truncate(v.text, 160) + "”"),
-      elem("div", { class: "nwhy" },
-        why + " · about " + (v.cluster || "this topic") + " ",
-        v.url ? elem("a", { href: v.url, target: "_blank", rel: "noopener" }, "[View post →]") : null),
-    );
-    nb.appendChild(item);
+    const bucket = v.bucket || "neu";
+    const quote = truncate(stripUrls(v.text), 220);
+    if (!quote) continue;
+    const card = elem("article", { class: "notable-card " + bucket },
+      elem("div", { class: "nb-head" },
+        elem("span", { class: "nb-tag " + bucket },
+          elem("i", null), BUCKET_LABEL[bucket] || "Notable"),
+        v.cluster ? elem("span", { class: "nb-topic" }, v.cluster) : null),
+      elem("blockquote", { class: "nb-quote" }, quote),
+      v.url ? elem("a", { class: "nb-link", href: v.url, target: "_blank", rel: "noopener" },
+        "View post", elem("span", { class: "nb-arr" }, "→")) : null);
+    nb.appendChild(card);
   }
   if (!nb.firstChild) nb.appendChild(elem("p", { class: "ev-intro" }, "No standout reactions yet."));
 }
@@ -213,6 +213,9 @@ function joinPlain(arr) {
 function truncate(t, n) {
   t = String(t || "");
   return t.length > n ? t.slice(0, n).trimEnd() + "…" : t;
+}
+function stripUrls(t) {
+  return String(t || "").replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
 }
 
 function showVoice(i) {
