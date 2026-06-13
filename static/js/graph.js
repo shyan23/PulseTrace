@@ -78,7 +78,11 @@ async function drawGraph(rid) {
   if (hint) hint.classList.toggle("hidden", nodes.length > 0);
   stopGraphSpin();
   if (cy) cy.destroy();
-  if (!nodes.length) { cy = null; return; }
+  if (!nodes.length) {
+    cy = null;
+    if (window._graphRO) { window._graphRO.disconnect(); window._graphRO = null; }
+    return;
+  }
 
   const txt = cssVar("--text"), muted = cssVar("--muted"),
         accent = cssVar("--accent2"), panel = cssVar("--panel");
@@ -141,8 +145,13 @@ async function drawGraph(rid) {
   $("#gZoomOut").onclick = () => cy && cy.zoom({ level: cy.zoom() / 1.3, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
   $("#gFit").onclick = () => cy && cy.fit(undefined, 40);
 
-  if (!window._graphResize) {
-    window._graphResize = true;
-    window.addEventListener("resize", () => { if (cy) { cy.resize(); cy.fit(undefined, 40); } });
-  }
+  // Cytoscape measures its container at init. When the panel is hidden or not yet
+  // laid out (live dashboard reveal, SPA view switch), it renders blank until the
+  // viewport is recomputed. Resize + refit whenever #graph actually gains size.
+  const gc = $("#graph");
+  if (window._graphRO) window._graphRO.disconnect();
+  window._graphRO = new ResizeObserver(() => {
+    if (cy && gc.clientWidth > 0 && gc.clientHeight > 0) { cy.resize(); cy.fit(undefined, 40); }
+  });
+  window._graphRO.observe(gc);
 }
