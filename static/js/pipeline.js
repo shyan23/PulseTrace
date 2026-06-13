@@ -100,9 +100,6 @@ const PL2 = (function () {
     cur = i; paintRail(); tickEta();
     el("pl2-h").textContent = STAGES[i].label;
     el("pl2-sub").textContent = STAGES[i].sub;
-    // Live tally belongs only to the gathering phase — drop it once we move on
-    // to clustering/analysis so it doesn't bleed over later stages.
-    if (i >= 2) { const lc = el("pl2-livecount"); if (lc) lc.remove(); }
     renderAnim(i);
   }
   function setMin(i) { if (i > cur) setStage(i); }
@@ -198,19 +195,6 @@ const PL2 = (function () {
 
   function paintCount() {
     const c = el("pl2-count"); if (c) c.textContent = count;
-    // Persistent live tally in pl2-extra — the stage-1 "pl2-count" element is
-    // destroyed when the anim advances (~14s), but fetches (esp. slow FB runs)
-    // land minutes later. This badge survives stage swaps so the number climbs.
-    const extra = el("pl2-extra");
-    if (extra && cur <= 1) {
-      let live = el("pl2-livecount");
-      if (!live && count > 0) {
-        live = h("div", { id: "pl2-livecount", style:
-          "margin-top:10px;text-align:center;font-size:14px;font-weight:600;color:var(--muted,#94a3b8)" });
-        extra.appendChild(live);
-      }
-      if (live) live.textContent = "🔎 " + count + " posts found so far";
-    }
     const chips = el("pl2-chips"); if (!chips) return;
     clearNode(chips);
     for (const k in plats) {
