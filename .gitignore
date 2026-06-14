@@ -45,3 +45,7 @@ last30days-skill/
 .playwright-mcp/
 # Google OAuth client secret (live credential — never commit)
 client_secret_*.json
+
+# Mined experiment scratch — features already ported into lib/
+headroom/
+Agent-Reach/

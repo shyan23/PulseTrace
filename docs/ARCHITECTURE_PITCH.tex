@@ -1,0 +1,219 @@
+\documentclass[10pt,a4paper]{article}
+
+% ============================================================
+%  PulseTrace — 3-minute judge poster (single page)
+%  Compile: pdflatex ARCHITECTURE_PITCH.tex  (run once)
+%  Condensed from ARCHITECTURE.tex — talk it top-to-bottom in 3 min.
+% ============================================================
+
+\usepackage[margin=0.85cm]{geometry}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{multicol}
+\usepackage{tikz}
+\usepackage[colorlinks=true,linkcolor=accent,urlcolor=accent]{hyperref}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit,backgrounds}
+
+% ---- palette (matches ARCHITECTURE.tex) ----
+\definecolor{accent}{HTML}{2563EB}
+\definecolor{accent2}{HTML}{7C3AED}
+\definecolor{ok}{HTML}{059669}
+\definecolor{warn}{HTML}{D97706}
+\definecolor{ink}{HTML}{1F2937}
+\definecolor{mist}{HTML}{F3F4F6}
+\definecolor{rule}{HTML}{9CA3AF}
+
+\setlist{nosep,leftmargin=1.1em}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% ---- band heading ----
+\newcommand{\band}[2]{%
+  \vspace{1pt}\noindent\colorbox{#1}{\begin{minipage}{\dimexpr\linewidth-2\fboxsep}%
+  \color{white}\bfseries\small #2\end{minipage}}\par\vspace{0pt}}
+
+% ---- tikz styles ----
+\tikzset{
+  box/.style={rectangle, rounded corners=2pt, draw=rule, fill=white,
+              align=center, font=\scriptsize, inner sep=3pt, minimum height=6mm},
+  proc/.style={box, fill=mist},
+  llm/.style={box, fill=accent2!12, draw=accent2},
+  io/.style={box, fill=accent!10, draw=accent},
+  term/.style={box, fill=ok!12, draw=ok},
+  warnb/.style={box, fill=warn!12, draw=warn},
+  fl/.style={-{Stealth[length=2mm]}, draw=ink, thick},
+  flx/.style={-{Stealth[length=2mm]}, draw=warn, thick, dashed},
+  lbl/.style={font=\tiny\itshape, text=ink}
+}
+
+\begin{document}
+
+% ===== title strip =====
+\begin{tikzpicture}
+\node[rectangle, fill=ink, rounded corners=3pt, inner sep=6pt,
+      text width=\dimexpr\linewidth-16pt] (t) {%
+  {\color{white}\Large\bfseries PulseTrace}\;
+  {\color{accent!70}\large\bfseries — Agentic Multi-Source Sentiment Intelligence}\\[2pt]
+  {\color{mist}\small Topic in $\rightarrow$ LLM agent loops \emph{fetch$\to$embed$\to$cluster$\to$label},
+  decides itself when coverage has \textbf{converged} $\rightarrow$ ranked evidence, sentiment timeline \& cited RAG Q\&A, inside a fault-tolerant LangGraph supervisor.}};
+\end{tikzpicture}
+
+% =====================================================================
+\band{accent}{1\quad ONE PICTURE — a resilient shell around an adaptive loop}
+
+\begin{center}
+\begin{tikzpicture}[node distance=3mm]
+  % inner loop
+  \node[llm] (seed) {LLM seed\\queries};
+  \node[proc, right=of seed] (fetch) {fetch\\9 connectors};
+  \node[proc, right=of fetch] (embed) {embed +\\cluster};
+  \node[llm, right=of embed] (label) {LLM label\\+ decide};
+  \draw[fl] (seed)--(fetch); \draw[fl] (fetch)--(embed); \draw[fl] (embed)--(label);
+  \draw[fl] (label.south) to[out=-90,in=-90,looseness=1.5] node[lbl,below]{expand} (fetch.south);
+  \begin{scope}[on background layer]
+    \node[draw=accent, thick, rounded corners=4pt, fill=accent!4,
+          fit=(seed)(fetch)(embed)(label), inner sep=7pt,
+          label={[anchor=north west,font=\bfseries\scriptsize,text=accent]north west:Layer 2 — Agentic loop \code{lib/agent.py}}] (inner) {};
+  \end{scope}
+  % outer graph
+  \node[io, above=13mm of fetch, xshift=-8mm] (gcrawl) {crawl};
+  \node[proc, right=6mm of gcrawl] (gscore) {score};
+  \node[warnb, right=6mm of gscore] (galert) {alert};
+  \node[proc, left=6mm of gcrawl] (grec) {recover};
+  \node[term, right=6mm of galert] (gdone) {done};
+  \draw[fl] (grec)--(gcrawl); \draw[fl] (gcrawl)--(gscore);
+  \draw[fl] (gscore)--(galert); \draw[fl] (galert)--(gdone);
+  \draw[flx] (gcrawl.north) to[out=120,in=60,looseness=1.6] node[lbl,above]{error}(grec.north);
+  \draw[flx] (gscore.south) to[out=-70,in=-110,looseness=1.1] node[lbl,below]{retry$<$3}(gcrawl.south);
+  \draw[fl, accent, dashed] (gcrawl) -- node[lbl,right]{runs} (inner.north -| gcrawl);
+  \begin{scope}[on background layer]
+    \node[draw=accent2, thick, rounded corners=4pt, fill=accent2!4,
+          fit=(grec)(gcrawl)(gscore)(galert)(gdone), inner sep=7pt,
+          label={[anchor=north west,font=\bfseries\scriptsize,text=accent2]north west:Layer 1 — LangGraph supervisor \code{lib/orchestration/}}] {};
+  \end{scope}
+\end{tikzpicture}
+\end{center}
+\vspace{-2pt}
+{\footnotesize\textbf{Say this:} ``It's \emph{two layers}. LangGraph isn't the search brain — it's the
+fault-tolerant supervisor (retry / alert / schedule). The agentic search lives inside one node,
+\code{crawl}. Separating ops from intelligence makes a failure \emph{route} to \code{recover} instead of crashing.''}
+
+% =====================================================================
+\band{accent2}{2\quad THE WOW — the LLM is in the loop \emph{twice}, and stopping is \emph{measured}}
+
+\begin{multicols}{2}
+{\footnotesize
+\textbf{Seed.} One LLM call $\rightarrow$ 5 diverse queries (6 in opinion mode: half support, half challenge).\\[2pt]
+\textbf{Fetch.} All pending \code{(query,source)} in a thread pool; per-query limit shrinks so a run never blows the 500-post budget.\\[2pt]
+\textbf{Dedup.} 64-bit SimHash, Hamming $\le10$ — reposts don't burn tokens or double-count clusters.\\[2pt]
+\textbf{Gate.} Drop posts with topic-overlap $<0.12$ — \emph{but only if $\ge6$ survive} (recall floor).\\[2pt]
+\textbf{Cluster.} Gemini embeds $\rightarrow$ HDBSCAN (finds $k$ itself); KMeans fallback.\\[2pt]
+\textbf{Decide.} Labels (not raw posts) $\rightarrow$ \code{\_llm\_next} proposes $\le3$ queries, each re-anchored to the core subject so it can't drift.
+}
+
+\columnbreak
+
+\begin{center}
+\begin{tikzpicture}[node distance=3.4mm]
+  \node[llm] (seed) {LLM seed 5--6 q};
+  \node[proc, below=of seed] (fetch) {fetch (budget/pending)};
+  \node[proc, below=of fetch] (dedup) {SimHash dedup};
+  \node[proc, below=of dedup] (gate) {relevance gate};
+  \node[io, below=of gate] (embed) {embed $\to$ HDBSCAN};
+  \node[proc, below=of embed] (meas) {entropy $H$ + saturation};
+  \node[llm, below=of meas] (lab) {LLM label clusters};
+  \node[diamond, aspect=1.6, draw=warn, fill=warn!10, font=\tiny, inner sep=1pt,
+        right=8mm of meas] (stop) {stop?};
+  \node[llm, above=6mm of stop] (next) {\code{\_llm\_next} $\le3$ q};
+  \node[term, below=6mm of stop] (fin) {finalize: LLM rerank};
+  \foreach \a/\b in {seed/fetch,fetch/dedup,dedup/gate,gate/embed,embed/meas,meas/lab}
+     \draw[fl] (\a)--(\b);
+  \draw[fl] (lab.east) to[out=0,in=-90] (stop.south);
+  \draw[fl] (stop.north) -- node[lbl,right]{expand} (next.south);
+  \draw[fl] (next.north) to[out=90,in=0] (fetch.east);
+  \draw[fl] (stop.south) -- node[lbl,right]{yes} (fin.north);
+\end{tikzpicture}
+\end{center}
+\end{multicols}
+\vspace{-4pt}
+{\footnotesize\colorbox{warn!12}{\begin{minipage}{\dimexpr\linewidth-2\fboxsep}
+\textbf{Stop if ANY:} budget $|\text{seen}|\ge500$ \;$\bullet$\; iters $\ge4$ \;$\bullet$\;
+\emph{converged} $|H{-}H_{-1}|<0.05$ \;$\bullet$\; \emph{saturated} sat $\ge0.80$ \;$\bullet$\; LLM says stop.
+\textbf{Say this:} ``Thin topic converges in 2 iterations; a rich topic expands to the budget. \emph{The agent decides how hard to look} — it's not a fixed page count.''
+\end{minipage}}}
+
+% =====================================================================
+\band{ok}{3\quad THE PROOF — relevance-dominant ranking, measured, not guessed}
+
+\begin{multicols}{2}
+\[
+\text{score}=0.85\,\text{rel}+0.08\,\text{eng}+0.05\,\text{rec}+0.02\,\text{src}
+\]
+\vspace{-6pt}
+\[
+\times\,0.3\quad\text{if}\ \text{rel}<0.35
+\]
+{\footnotesize Two stages: a \emph{cheap pure} \code{rank\_posts} runs every iteration (keeps the live UI top-posts fresh, builds a 30-shortlist), then \emph{one} \code{llm\_rerank} scores 0--100 with a prompt-injection guard. Sub-0.35 is buried $\times0.3$, not deleted.}
+
+\columnbreak
+
+\begin{center}
+\begin{tikzpicture}
+  \node[font=\scriptsize\bfseries, text=ink] at (0,2.15) {nDCG@5 vs the \#1 OSS agent};
+  \fill[accent] (0,0) rectangle (1.0,1.43); \node[font=\scriptsize\bfseries,text=accent] at (0.5,1.63){0.72};
+  \fill[rule]   (1.5,0) rectangle (2.5,1.04); \node[font=\scriptsize\bfseries,text=rule] at (2.0,1.24){0.52};
+  \draw[draw=rule] (-0.2,0)--(2.9,0);
+  \node[font=\tiny,text=accent] at (0.5,-0.25){PulseTrace};
+  \node[font=\tiny,text=rule] at (2.0,-0.25){contender};
+  \node[font=\scriptsize\bfseries,text=ok] at (4.0,0.9){+38\%};
+\end{tikzpicture}
+\end{center}
+\end{multicols}
+\vspace{-4pt}
+{\footnotesize\textbf{Say this:} ``We \emph{measured} that engagement was noise against the judge, re-weighted relevance $0.60\rightarrow0.85$, and beat the \#1 GitHub agentic engine 0.716 vs 0.520 on identical model/sources/judge. The edge is the loop, not the model.''}
+
+% =====================================================================
+\band{warn}{4\quad WHY NOTHING SINGLE-POINTS-OF-FAILURE \& THE NUMBERS}
+
+\begin{multicols}{2}
+{\footnotesize
+\textbf{Resilience chain (every layer degrades, none crashes):}
+\begin{itemize}
+\item connector fails $\rightarrow$ log \& skip
+\item HDBSCAN can't cluster $\rightarrow$ KMeans
+\item Gemini key 429 / spend-cap $\rightarrow$ backup key, sticks
+\item pipeline throws $\rightarrow$ graph routes to \code{recover} (retry$\times$3, 30s backoff)
+\end{itemize}
+\textbf{9 connectors} behind one ABC (reddit, hn, fb, x, ig, youtube, polymarket, github, bluesky). Reddit+HN always-on; FB needs cookies; X/IG return \code{[]} until keyed.}
+
+\columnbreak
+
+{\footnotesize
+\textbf{Measured profile} (prod, 500-post run):\\[2pt]
+\begin{tabular}{@{}lr@{}}
+fetch $\times3$ & $\sim11$s\\
+embed + cluster $\times3$ & $\sim18$s\\
+label $\times3$ & $\sim9$s\\
+final LLM rerank & $\sim12$s\\
+briefing + evidence & $\sim9$s\\[1pt]
+\textbf{total end-to-end} & $\sim\mathbf{62}$\textbf{s}\\
+\end{tabular}\\[3pt]
+$\sim$9k LOC production Python \;$\bullet$\; 386 tests \;$\bullet$\; 15 MCP tools \;$\bullet$\; live HTTPS.}
+\end{multicols}
+
+% =====================================================================
+\band{ink}{5\quad 30-SECOND CLOSE — the five lines}
+
+{\footnotesize
+\textbf{1. Two layers.} LangGraph = resilience; \code{run\_agent} = intelligence. Don't conflate.\quad
+\textbf{2. LLM in the loop twice.} Seeds queries, then re-plans from the clusters it just found — that's agentic, not a scrape.\quad
+\textbf{3. Stopping is measured.} Entropy + saturation decide convergence.\quad
+\textbf{4. Ranking is relevance-dominant by evidence.} +38\% over the best OSS engine, same conditions.\quad
+\textbf{5. Nothing single-points.} Connector $\to$ skip; HDBSCAN $\to$ KMeans; key $\to$ backup; throw $\to$ recover.}
+
+\end{document}
