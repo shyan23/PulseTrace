@@ -1,6 +1,7 @@
 """Per-cluster sentiment aggregation via batched LLM."""
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+from .compress import dedup_by, dedup_texts, expand, text_hash
 from .llm import chat_json
 
 
@@ -13,7 +14,11 @@ SYS = (
 def score_batch(theme: str, texts: list[str]) -> list[str]:
     if not texts:
         return []
-    enum = "\n".join(f"[{i}] {t[:400]}" for i, t in enumerate(texts))
+    # Dedup copypasta/astroturf: score each distinct post once, then re-expand
+    # by multiplicity. Token cost drops with the duplication rate; the
+    # multiplicity-weighted tally is identical to scoring every post.
+    d = dedup_texts(texts)
+    enum = "\n".join(f"[{i}] {t[:400]}" for i, t in enumerate(d.uniques))
     try:
         out = chat_json(SYS, f"Theme: {theme}\nPosts:\n{enum}", max_tokens=600, stage="stance")
     except Exception:
@@ -29,7 +34,8 @@ def score_batch(theme: str, texts: list[str]) -> list[str]:
             by_i[int(it.get("i", -1))] = str(it.get("s", "neu"))
         except (TypeError, ValueError):
             continue
-    return [by_i.get(i, "neu") for i in range(len(texts))]
+    uniq_labels = [by_i.get(i, "neu") for i in range(len(d.uniques))]
+    return expand(uniq_labels, d.index_of)
 
 
 SYS_MIXED = (
@@ -42,8 +48,12 @@ def score_mixed(items: list[tuple[str, str]]) -> list[str]:
     """Score (theme, text) pairs spanning multiple clusters in one LLM call."""
     if not items:
         return []
+    # Dedup on (theme, text): the same copypasta under one theme collapses to a
+    # single scored row, re-expanded by multiplicity. Distinct theme => distinct
+    # row, so cross-cluster sentiment stays correct.
+    d = dedup_by(items, lambda p: text_hash(p[0] + "\x00" + p[1]))
     enum = "\n".join(
-        f"[{i}] (re: {theme}) {text[:400]}" for i, (theme, text) in enumerate(items)
+        f"[{i}] (re: {theme}) {text[:400]}" for i, (theme, text) in enumerate(d.uniques)
     )
     try:
         out = chat_json(SYS_MIXED, enum, max_tokens=900, stage="stance")
@@ -60,7 +70,8 @@ def score_mixed(items: list[tuple[str, str]]) -> list[str]:
             by_i[int(it.get("i", -1))] = str(it.get("s", "neu"))
         except (TypeError, ValueError):
             continue
-    return [by_i.get(i, "neu") for i in range(len(items))]
+    uniq_labels = [by_i.get(i, "neu") for i in range(len(d.uniques))]
+    return expand(uniq_labels, d.index_of)
 
 
 def _tally(labels: list[str]) -> dict:
