@@ -17,7 +17,7 @@ from .embed import embed_texts
 from .dedup import near_dupe_keep
 from .cluster import cluster_embeddings, centroids, entropy, saturation
 from .label import label_cluster
-from .stance import cluster_sentiments
+from .stance import cluster_stance_labels, tally
 from .relevance import weighted_relevance, extract_core_subject, select_on_topic
 from .queryparse import parse_query
 from .rerank import rank_posts, llm_rerank
@@ -334,13 +334,12 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
         ranked_global = llm_rerank(topic, shortlist, n=len(shortlist))
         rank_index = {p.id: i for i, p in enumerate(ranked_global)}
         try:
-            sentiments = cluster_sentiments({
+            labels_by_cid = cluster_stance_labels({
                 c["id"]: (c["label"], [m.text for m in final_members.get(c["id"], [])])
                 for c in cluster_meta
             })
-        except Exception as e:
-            sentiments = {c["id"]: {"pos": 0.0, "neu": 1.0, "neg": 0.0, "error": str(e)}
-                          for c in cluster_meta}
+        except Exception:
+            labels_by_cid = {}
         for c in cluster_meta:
             members = final_members.get(c["id"], [])
             in_short = sorted((m for m in members if m.id in rank_index),
@@ -351,7 +350,12 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
                 rest = rank_posts(topic, [m for m in members if m.id not in rank_index], n=5)
                 tops = (in_short + rest)[:5]
             c["top_posts"] = [m.id for m in tops]
-            c["sentiment"] = sentiments.get(c["id"], c["sentiment"])
+            # member_stances is aligned 1:1 with c["members"] so the UI can show
+            # (and filter to) the individual positive / negative posts.
+            stances = labels_by_cid.get(c["id"], [])
+            if stances:
+                c["member_stances"] = stances
+                c["sentiment"] = tally(stances)
         write_json(run_id, "clusters.json", cluster_meta)
         write_json(run_id, "ranked.json", [p.to_dict() for p in ranked_global[:15]])
         BUS.publish(run_id, {

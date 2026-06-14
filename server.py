@@ -24,7 +24,7 @@ from lib.agent import run_agent
 from lib.orchestration.runner import run_graph_streamed
 from lib.briefing import build as build_briefing
 from lib.events import BUS, sse_format
-from lib.store import read_json, new_run_id, run_dir, ROOT
+from lib.store import read_json, write_json, new_run_id, run_dir, ROOT
 from lib.replay import frame as replay_frame, max_iter as replay_max_iter
 from lib.rag import ask as rag_ask
 from lib import backend, fb_cookies, docs as docs_mod
@@ -36,6 +36,9 @@ from db import auth_users
 
 app = Flask(__name__)
 CORS(app)
+
+# Don't let browsers hold stale JS/CSS — frontend iterates faster than cache TTLs.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
 
@@ -668,10 +671,22 @@ def cluster_posts(run_id: str, cid: str):
         return jsonify({"error": "cluster not found"}), 404
     top = {str(i) for i in match.get("top_posts", [])}
     member_ids = [str(i) for i in match.get("members", [])]
+
+    stance_by_id = _member_stance_map(run_id, match, by_id, member_ids)
+
+    want = (request.args.get("stance", "") or "").lower()
+    if want not in ("pos", "neu", "neg"):
+        want = ""
+
     resolved = []
+    counts = {"pos": 0, "neu": 0, "neg": 0}
     for pid in member_ids:
         p = by_id.get(pid)
         if not p:
+            continue
+        st = stance_by_id.get(pid, "neu")
+        counts[st] = counts.get(st, 0) + 1
+        if want and st != want:
             continue
         resolved.append({
             "id": p.get("id"),
@@ -682,6 +697,7 @@ def cluster_posts(run_id: str, cid: str):
             "ts": p.get("ts", 0),
             "reactions": p.get("reactions", 0),
             "comments": p.get("comments", 0),
+            "stance": st,
             "top": pid in top,
         })
     resolved.sort(key=lambda x: (not x["top"], -(x["reactions"] or 0)))
@@ -690,9 +706,45 @@ def cluster_posts(run_id: str, cid: str):
         "label": match.get("label", "Unlabeled"),
         "desc": match.get("desc", ""),
         "sentiment": match.get("sentiment", {}),
+        "counts": counts,
         "n": len(resolved),
         "posts": resolved,
     })
+
+
+def _member_stance_map(run_id: str, match: dict, by_id: dict,
+                       member_ids: list[str]) -> dict[str, str]:
+    """pid -> "pos"/"neu"/"neg". Uses persisted member_stances when present;
+    otherwise scores the cluster's posts once via the LLM and caches the result
+    back into clusters.json so older runs gain the data lazily on first open."""
+    stances = match.get("member_stances") or []
+    if len(stances) == len(member_ids) and member_ids:
+        return {pid: stances[i] for i, pid in enumerate(member_ids)}
+
+    present = [pid for pid in member_ids if pid in by_id]
+    texts = [by_id[pid].get("text", "") for pid in present]
+    if not texts:
+        return {}
+    try:
+        from lib.stance import cluster_stance_labels
+        labels = cluster_stance_labels({0: (match.get("label", ""), texts)}).get(0, [])
+    except Exception:
+        return {}
+    if len(labels) != len(present):
+        return {}
+    out = {pid: labels[i] for i, pid in enumerate(present)}
+
+    # Cache aligned to the full members list so subsequent opens are instant.
+    try:
+        clusters = read_json(run_id, "clusters.json") or []
+        for c in clusters:
+            if str(c.get("id")) == str(match.get("id")):
+                c["member_stances"] = [out.get(pid, "neu") for pid in member_ids]
+                break
+        write_json(run_id, "clusters.json", clusters)
+    except (OSError, ValueError):
+        pass
+    return out
 
 
 @app.route("/run/<run_id>/voices")

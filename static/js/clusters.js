@@ -63,21 +63,49 @@ function relTime(ts) {
   return Math.round(d / 86400) + "d ago";
 }
 
-let _drawerPosts = [];
-function openClusterDrawer(cid) {
+let _drawerPosts = [], _drawerStance = "all", _drawerCounts = { pos: 0, neu: 0, neg: 0 };
+const STANCE_META = {
+  all: { emoji: "", label: "All" },
+  pos: { emoji: "😊", label: "Positive" },
+  neu: { emoji: "😐", label: "Mixed" },
+  neg: { emoji: "😞", label: "Critical" },
+};
+function openClusterDrawer(cid, stance) {
+  _drawerStance = (stance === "pos" || stance === "neu" || stance === "neg") ? stance : "all";
   const drawer = $("#cluster-drawer"), backdrop = $("#cluster-backdrop");
   drawer.classList.add("open"); backdrop.classList.add("open");
   drawer.setAttribute("aria-hidden", "false");
   $("#drawer-title").textContent = "Loading…";
   $("#drawer-why").textContent = "";
   $("#drawer-count").textContent = "";
-  clearNode($("#drawer-body"));
+  clearNode($("#drawer-body")); clearNode($("#drawer-stance"));
   $("#drawer-search").value = "";
   if (!runId) return;
   fetch("/run/" + encodeURIComponent(runId) + "/cluster/" + encodeURIComponent(cid))
     .then(r => r.json())
     .then(fillDrawer)
     .catch(() => { $("#drawer-title").textContent = "Couldn't load this group"; });
+}
+
+function renderStanceChips() {
+  const wrap = $("#drawer-stance"); clearNode(wrap);
+  const total = _drawerPosts.length;
+  const order = [["all", total], ["pos", _drawerCounts.pos || 0],
+                 ["neu", _drawerCounts.neu || 0], ["neg", _drawerCounts.neg || 0]];
+  for (const [key, n] of order) {
+    if (key !== "all" && !n) continue;  // hide empty buckets
+    const m = STANCE_META[key];
+    const chip = elem("button", {
+      class: "stance-chip " + key + (key === _drawerStance ? " active" : ""),
+      type: "button", "aria-pressed": String(key === _drawerStance),
+    }, (m.emoji ? m.emoji + " " : "") + m.label + " · " + n);
+    chip.addEventListener("click", () => {
+      _drawerStance = key;
+      renderStanceChips();
+      paintDrawerPosts($("#drawer-search").value);
+    });
+    wrap.appendChild(chip);
+  }
 }
 
 function fillDrawer(d) {
@@ -98,24 +126,34 @@ function fillDrawer(d) {
   $("#drawer-mood-lbl").textContent = moodLabel(s) + " · 😊 " + pos + "%  😐 " + neu + "%  😞 " + neg + "%";
   $("#drawer-count").textContent = "Found in " + (d.n || 0) + " post" + (d.n === 1 ? "" : "s");
   _drawerPosts = d.posts || [];
+  _drawerCounts = d.counts || _drawerPosts.reduce((a, p) => {
+    a[p.stance || "neu"] = (a[p.stance || "neu"] || 0) + 1; return a;
+  }, { pos: 0, neu: 0, neg: 0 });
+  renderStanceChips();
   paintDrawerPosts("");
 }
 
 function paintDrawerPosts(filter) {
   const body = $("#drawer-body"); clearNode(body);
   const q = (filter || "").toLowerCase();
-  const list = q
-    ? _drawerPosts.filter(p => (p.text || "").toLowerCase().includes(q))
-    : _drawerPosts;
+  let list = _drawerStance === "all"
+    ? _drawerPosts : _drawerPosts.filter(p => (p.stance || "neu") === _drawerStance);
+  if (q) list = list.filter(p => (p.text || "").toLowerCase().includes(q));
   if (!list.length) {
-    body.appendChild(elem("div", { class: "drawer-empty" },
-      _drawerPosts.length ? "No posts match your search."
-                          : "We're still gathering posts for this group. Check back soon."));
+    const why = _drawerPosts.length
+      ? (_drawerStance !== "all"
+          ? "No " + (STANCE_META[_drawerStance].label || "").toLowerCase() + " posts in this group."
+          : "No posts match your search.")
+      : "We're still gathering posts for this group. Check back soon.";
+    body.appendChild(elem("div", { class: "drawer-empty" }, why));
     return;
   }
   for (const p of list) {
     const m = sourceMeta(p.source);
+    const st = p.stance || "neu";
     const meta = elem("div", { class: "meta" },
+      elem("span", { class: "stance-badge " + st },
+        (STANCE_META[st].emoji || "💬") + " " + STANCE_META[st].label),
       elem("span", { class: "src" }, m.icon + " " + m.label),
       p.author ? elem("span", null, "· " + String(p.author)) : null,
       p.ts ? elem("span", null, "· " + relTime(p.ts)) : null,

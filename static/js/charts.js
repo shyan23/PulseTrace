@@ -17,9 +17,24 @@ function renderSentChart(cs) {
     ]},
     options: {
       responsive: true,
+      // Click a colored segment → open that cluster's posts filtered to that
+      // sentiment (e.g. the green slice = read the positive posts).
+      onClick: (_e, els) => {
+        if (!els.length) return;
+        const el = els[0];
+        const c = cs[el.index];
+        if (!c) return;
+        const stance = ["pos", "neu", "neg"][el.datasetIndex] || "all";
+        openClusterDrawer(c.id, stance);
+      },
+      onHover: (e, els) => {
+        if (e.native && e.native.target) e.native.target.style.cursor = els.length ? "pointer" : "default";
+      },
       plugins: {
         legend: { labels: { color: text } },
-        tooltip: { callbacks: { label: (i) => i.dataset.label + ": " + i.parsed.y + "%" } },
+        tooltip: { callbacks: {
+          label: (i) => i.dataset.label + ": " + i.parsed.y + "% (click to read)",
+        } },
       },
       scales: {
         x: { stacked: true, ticks: { color: muted }, grid: { color: grid } },

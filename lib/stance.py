@@ -74,7 +74,7 @@ def score_mixed(items: list[tuple[str, str]]) -> list[str]:
     return expand(uniq_labels, d.index_of)
 
 
-def _tally(labels: list[str]) -> dict:
+def tally(labels: list[str]) -> dict:
     if not labels:
         return {"pos": 0.0, "neu": 1.0, "neg": 0.0}
     pos = sum(1 for s in labels if s == "pos")
@@ -84,28 +84,39 @@ def _tally(labels: list[str]) -> dict:
     return {"pos": pos / total, "neu": neu / total, "neg": neg / total}
 
 
-def cluster_sentiments(themed: dict[int, tuple[str, list[str]]],
-                       batch: int = 24, max_workers: int = 8) -> dict:
-    """Batched per-cluster sentiment: posts from all clusters share LLM calls.
+_tally = tally  # back-compat alias
 
-    `themed` maps cluster id -> (theme_label, member_texts). Returns
-    cluster id -> {pos, neu, neg} fractions.
+
+def cluster_stance_labels(themed: dict[int, tuple[str, list[str]]],
+                          batch: int = 24, max_workers: int = 8) -> dict[int, list[str]]:
+    """Per-post stance labels, batched across clusters in shared LLM calls.
+
+    `themed` maps cluster id -> (theme_label, member_texts). Returns cluster id
+    -> list of "pos"/"neu"/"neg" aligned 1:1 with that cluster's member_texts,
+    so callers can persist which individual posts are positive/negative.
     """
     flat: list[tuple[int, str, str]] = []
     for cid, (theme, texts) in themed.items():
         for t in texts:
             flat.append((cid, theme, t))
 
-    by_cid: dict[int, list[str]] = {}
+    by_cid: dict[int, list[str]] = {cid: [] for cid in themed}
     if flat:
         chunks = [flat[s:s + batch] for s in range(0, len(flat), batch)]
         with ThreadPoolExecutor(max_workers=min(max_workers, len(chunks))) as ex:
             results = list(ex.map(lambda ch: score_mixed([(th, tx) for _, th, tx in ch]), chunks))
         for chunk, labels in zip(chunks, results):
             for (cid, _theme, _text), s in zip(chunk, labels):
-                by_cid.setdefault(cid, []).append(s)
+                by_cid[cid].append(s)
+    return by_cid
 
-    return {cid: _tally(by_cid.get(cid, [])) for cid in themed}
+
+def cluster_sentiments(themed: dict[int, tuple[str, list[str]]],
+                       batch: int = 24, max_workers: int = 8) -> dict:
+    """Batched per-cluster sentiment fractions. Same inputs as
+    `cluster_stance_labels`; returns cluster id -> {pos, neu, neg}."""
+    by_cid = cluster_stance_labels(themed, batch=batch, max_workers=max_workers)
+    return {cid: tally(by_cid.get(cid, [])) for cid in themed}
 
 
 def cluster_sentiment(theme: str, texts: list[str], batch: int = 8) -> dict:
