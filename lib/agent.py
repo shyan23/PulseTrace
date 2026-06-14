@@ -12,12 +12,13 @@ from .connectors.youtube import YouTubeConnector
 from .connectors.polymarket import PolymarketConnector
 from .connectors.github import GitHubConnector
 from .connectors.bluesky import BlueskyConnector
+from .connectors.google import GoogleConnector
 from .embed import embed_texts
 from .dedup import near_dupe_keep
 from .cluster import cluster_embeddings, centroids, entropy, saturation
 from .label import label_cluster
 from .stance import cluster_sentiments
-from .relevance import weighted_relevance, extract_core_subject
+from .relevance import weighted_relevance, extract_core_subject, select_on_topic
 from .queryparse import parse_query
 from .rerank import rank_posts, llm_rerank
 from .events import BUS
@@ -32,9 +33,11 @@ EPS = 0.05
 SAT_EPS = 0.8
 REL_FLOOR = 0.30          # weighted relevance below this = noise (was 0.12 token gate)
 RERANK_SHORTLIST = 30     # candidates sent to the LLM relevance reranker
-MIN_ONTOPIC = 6           # keep all posts if fewer survive the gate (recall guard)
 EXPAND_REL_FLOOR = 0.30   # drop expansion queries that drift off the core subject
+DEFAULT_SOURCE = "google"   # always-on open-web baseline (Jina), non-removable
+
 SOURCES: dict[str, type[Connector]] = {
+    "google": GoogleConnector,
     "reddit": RedditConnector,
     "hn": HNConnector,
     "facebook": FacebookConnector,
@@ -45,6 +48,22 @@ SOURCES: dict[str, type[Connector]] = {
     "github": GitHubConnector,
     "bluesky": BlueskyConnector,
 }
+
+
+def normalize_sources(sources: list[str]) -> list[str]:
+    """Keep known sources in order, with DEFAULT_SOURCE forced first and unique.
+
+    The default (Google via Jina) is non-changeable: callers cannot drop it, so
+    every run gets open-web coverage regardless of UI selection.
+    """
+    seen: set[str] = set()
+    out: list[str] = [DEFAULT_SOURCE]
+    seen.add(DEFAULT_SOURCE)
+    for s in sources:
+        if s in SOURCES and s not in seen:
+            out.append(s)
+            seen.add(s)
+    return out
 
 
 _SEED_BALANCED = (
@@ -138,7 +157,7 @@ def _fetch_all(queries: list[tuple[str, str]], limit: int,
 def run_agent(topic: str, sources: list[str], run_id: str | None = None,
               close_bus: bool = True) -> str:
     run_id = run_id or new_run_id()
-    sources = [s for s in sources if s in SOURCES] or ["facebook"]
+    sources = normalize_sources(sources)
     plan = parse_query(topic)
     core = plan.subject or extract_core_subject(topic) or topic
     started_at = int(time.time())
@@ -198,15 +217,14 @@ def run_agent(topic: str, sources: list[str], run_id: str | None = None,
             })
             posts = [posts[i] for i in keep_idx]
 
-        on_topic = [p for p in posts
-                    if weighted_relevance(plan.terms, p.text) >= REL_FLOOR]
-        if len(on_topic) >= MIN_ONTOPIC and len(on_topic) < len(posts):
+        keep_on_topic = select_on_topic(plan.terms, [p.text for p in posts], REL_FLOOR)
+        if len(keep_on_topic) < len(posts):
             BUS.publish(run_id, {
                 "type": "relevance_gated",
-                "kept": len(on_topic),
-                "dropped": len(posts) - len(on_topic),
+                "kept": len(keep_on_topic),
+                "dropped": len(posts) - len(keep_on_topic),
             })
-            posts = on_topic
+            posts = [posts[i] for i in keep_on_topic]
 
         try:
             emb = embed_texts([p.text for p in posts])

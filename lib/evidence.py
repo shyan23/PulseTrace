@@ -86,8 +86,18 @@ _SCHEMA = (
     '"topic_overview":str,"community_consensus":{"top_praise":[str],'
     '"top_criticism":[str],"misconceptions":[str],"uncertainties":[str]},'
     '"uncertainty":[str],"final_assessment":str,'
+    '"forecast":{"summary":str,"lines":[str]},'
     '"claims":[{"text":str,"side":"pro"|"con"|"neutral","reasoning":str,'
     '"llm_confidence":number,"cluster_ids":[int]}]}'
+)
+_FORECAST = (
+    "If the topic is a prediction or forecast (who wins, the score, an outcome, "
+    "a probability), fill `forecast` with the concrete numbers the posts and "
+    "markets actually state: win probabilities, predicted scorelines, odds, "
+    "implied percentages. Prefer crowd-priced market probabilities when present. "
+    "EXCEPTION TO THE NO-NUMBERS RULE: numbers ARE required inside `forecast` — "
+    "the ban on numeric scores applies only to the other fields, never here. If "
+    "no prediction is asked for, leave forecast empty."
 )
 
 
@@ -101,7 +111,8 @@ def build(run_id: str, opinion: str | None) -> dict:
     max_members = max((len(c.get("members", [])) for c in clusters), default=0)
     members_by_cid = {int(c["id"]): [posts_by_id[m] for m in c.get("members", [])
                                      if m in posts_by_id] for c in clusters}
-    llm = _llm_analyze(run.get("topic", ""), opinion, clusters, members_by_cid)
+    market_signal = _market_signal(posts_raw)
+    llm = _llm_analyze(run.get("topic", ""), opinion, clusters, members_by_cid, market_signal)
 
     claims = [_enrich_claim(c, members_by_cid, max_members, now)
               for c in llm.get("claims", [])]
@@ -119,9 +130,54 @@ def build(run_id: str, opinion: str | None) -> dict:
         "screen_b": [c for c in claims if c["side"] == "con"] if opinion else [],
         "uncertainty": _scrub(llm.get("uncertainty", [])),
         "final_assessment": _scrub(llm.get("final_assessment", "")),
+        "forecast": _forecast_out(llm.get("forecast")),
+        "market_signal": market_signal,
     }
     write_json(run_id, "evidence.json", out)
     return out
+
+
+def _forecast_out(raw) -> dict:
+    """Pass the forecast through UNSCRUBBED — its whole point is the numbers
+    (win %, scorelines, odds) that `_scrub`/`_VOICE` strip everywhere else."""
+    if not isinstance(raw, dict):
+        return {"summary": "", "lines": []}
+    lines = raw.get("lines", [])
+    return {
+        "summary": str(raw.get("summary", "")),
+        "lines": [str(x) for x in lines] if isinstance(lines, list) else [],
+    }
+
+
+def _market_signal(posts_raw: list[dict]) -> list[dict]:
+    """Deterministic crowd-priced odds pulled straight from polymarket posts —
+    guarantees forecast numbers exist even if the LLM omits them."""
+    out: list[dict] = []
+    for p in posts_raw:
+        if p.get("source") != "polymarket":
+            continue
+        odds = (p.get("raw") or {}).get("odds") or []
+        if not odds:
+            continue
+        out.append({
+            "event": (p.get("text") or "").split("\n", 1)[0],
+            "url": p.get("url"),
+            "markets": odds,
+        })
+    return out
+
+
+def _market_block(market_signal: list[dict]) -> str:
+    if not market_signal:
+        return ""
+    lines = ["\n\nCrowd-priced market odds (use these exact numbers in `forecast`):"]
+    for sig in market_signal:
+        lines.append(f'- {sig["event"]}')
+        for m in sig.get("markets", []):
+            priced = ", ".join(f'{o["name"]} {o["prob"] * 100:.0f}%'
+                               for o in m.get("outcomes", []))
+            lines.append(f'    • {m.get("question", "")} — {priced}')
+    return "\n".join(lines)
 
 
 def _enrich_claim(claim: dict, members_by_cid: dict[int, list[Post]],
@@ -167,7 +223,8 @@ def _cluster_digest(clusters: list[dict], members_by_cid: dict[int, list[Post]],
 
 
 def _llm_analyze(topic: str, opinion: str | None, clusters: list[dict],
-                 members_by_cid: dict[int, list[Post]]) -> dict:
+                 members_by_cid: dict[int, list[Post]],
+                 market_signal: list[dict] | None = None) -> dict:
     labels = _cluster_digest(clusters, members_by_cid)
     stance = (
         f'The user holds this opinion: "{opinion}". Split claims into "pro" '
@@ -179,9 +236,10 @@ def _llm_analyze(topic: str, opinion: str | None, clusters: list[dict],
     system = (
         "You are an evidence analyst building a balanced, Community-Notes-style "
         "report from social-media discussion. " + _BEHAVIOR + " " + _VOICE + " "
-        + _SPECIFICITY + " " + _SCHEMA
+        + _SPECIFICITY + " " + _FORECAST + " " + _SCHEMA
     )
-    user = f"Topic: {topic}\n{stance}\n\nWhat people are actually saying, grouped:\n{labels}"
+    user = (f"Topic: {topic}\n{stance}\n\nWhat people are actually saying, grouped:\n{labels}"
+            + _market_block(market_signal or []))
     try:
         out = chat_json(system, user, max_tokens=1800, stage="evidence")
         if not isinstance(out, dict):

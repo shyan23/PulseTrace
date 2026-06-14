@@ -62,6 +62,13 @@ const PL2 = (function () {
 
   const el = (id) => document.getElementById(id);
 
+  // Lifting the curtain is the only moment #graph is guaranteed unoccluded and
+  // measurable; the graph defers its cytoscape init until this fires.
+  function closeOverlay() {
+    el("pl2").classList.remove("open");
+    document.dispatchEvent(new CustomEvent("pl2:closed"));
+  }
+
   function buildRail() {
     const r = el("pl2-rail"); clearNode(r);
     STAGES.forEach((s, i) => {
@@ -303,7 +310,7 @@ const PL2 = (function () {
     clearAnim(); const a = el("pl2-anim"); clearNode(a);
     a.appendChild(h("div", { style: "font-size:90px" }, "🎉"));
     confetti();
-    setTimeout(() => { el("pl2").classList.remove("open"); stopTimers(); }, 1400);
+    setTimeout(() => { closeOverlay(); stopTimers(); }, 1400);
   }
 
   function confetti() {
@@ -375,7 +382,7 @@ const PL2 = (function () {
     ex.appendChild(h("div", { class: "pl2-err-actions" }, yes, no));
   }
 
-  function hide() { finished = true; stopTimers(); el("pl2").classList.remove("open"); clearNode(el("pl2-extra")); }
+  function hide() { finished = true; stopTimers(); closeOverlay(); clearNode(el("pl2-extra")); }
 
   return { start, event, complete, fail, briefingFailed, partial, hide };
 })();

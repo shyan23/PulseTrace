@@ -21,6 +21,14 @@
 
 ![PulseTrace landing](stuff_for_README/landing_page.png)
 
+<br/>
+
+### ▶️ 60-second demo — topic in, cited brief out
+
+![PulseTrace 60-second demo](stuff_for_README/demo.gif)
+
+*Live: agent writes its own queries → multi-source crawl → clusters + sentiment → cited answers, every step streamed.*
+
 </div>
 
 ---

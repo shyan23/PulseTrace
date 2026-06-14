@@ -21,6 +21,15 @@ from .llm import chat_json
 RELEVANCE_FLOOR = 0.10
 DEMOTE_FACTOR = 0.3
 
+# Search quality is judged on relevance alone, so relevance dominates the blend;
+# engagement/recency/source only break ties between similarly-relevant posts.
+# Anything the LLM judges below "tangential" is buried hard, not just demoted.
+W_RELEVANCE = 0.85
+W_ENGAGEMENT = 0.08
+W_RECENCY = 0.05
+W_SOURCE = 0.02
+RELEVANT_CUT = 0.35       # normalized LLM relevance below this = off-topic, bury
+
 SOURCE_QUALITY: dict[str, float] = {
     "hn": 0.9, "github": 0.9, "reddit": 0.8, "youtube": 0.7,
     "bluesky": 0.6, "x": 0.6, "polymarket": 0.7, "facebook": 0.5,
@@ -32,16 +41,20 @@ def _engagement_norm(p: Post) -> float:
     return min(influence(p) / 12.0, 1.0)
 
 
-def final_score(p: Post, relevance: float, now: int | None = None) -> float:
+def _blend(p: Post, relevance: float, now: int | None, cut: float) -> float:
     base = (
-        0.60 * relevance
-        + 0.20 * _engagement_norm(p)
-        + 0.15 * recency(p.ts, now)
-        + 0.05 * SOURCE_QUALITY.get(p.source, 0.5)
+        W_RELEVANCE * relevance
+        + W_ENGAGEMENT * _engagement_norm(p)
+        + W_RECENCY * recency(p.ts, now)
+        + W_SOURCE * SOURCE_QUALITY.get(p.source, 0.5)
     )
-    if relevance < RELEVANCE_FLOOR:
+    if relevance < cut:
         base *= DEMOTE_FACTOR
     return base
+
+
+def final_score(p: Post, relevance: float, now: int | None = None) -> float:
+    return _blend(p, relevance, now, RELEVANCE_FLOOR)
 
 
 def rank_posts(topic: str, posts: list[Post], n: int = 5,
@@ -89,17 +102,9 @@ def llm_rerank(topic: str, posts: list[Post], n: int = 5,
 
     core = extract_core_subject(topic) or topic
 
-    def _blend(p: Post) -> float:
+    def _score(p: Post) -> float:
         rr = llm_scores.get(p.id)
         rel = (rr / 100.0) if rr is not None else token_overlap_relevance(core, p.text)
-        score = (
-            0.60 * rel
-            + 0.20 * _engagement_norm(p)
-            + 0.15 * recency(p.ts, now)
-            + 0.05 * SOURCE_QUALITY.get(p.source, 0.5)
-        )
-        if rr is not None and rr < 20.0:
-            score *= DEMOTE_FACTOR
-        return score
+        return _blend(p, rel, now, RELEVANT_CUT)
 
-    return sorted(posts, key=_blend, reverse=True)[:n]
+    return sorted(posts, key=_score, reverse=True)[:n]

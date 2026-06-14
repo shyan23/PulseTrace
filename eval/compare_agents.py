@@ -65,6 +65,18 @@ def run_pulsetrace(topic: str) -> tuple[list[dict], float]:
         print(f"  [pt] run_agent error: {e}", flush=True)
         return [], time.time() - t0
     elapsed = time.time() - t0
+    # Read the system's actual ranked output (single LLM global rerank pass in
+    # agent.run_agent). The l30d baseline is a ranked list, so a fair search-
+    # quality comparison must use our ranked list — not a cluster-shuffled view.
+    try:
+        ranked_global = store.read_json(run_id, "ranked.json") or []
+    except Exception:
+        ranked_global = []
+    if ranked_global:
+        out = [{"url": p.get("url") or "", "text": p.get("text") or "",
+                "source": p.get("source") or ""} for p in ranked_global]
+        return out[:K], elapsed
+    # Fallback for older runs without ranked.json: round-robin cluster tops.
     try:
         posts = store.read_json(run_id, "posts.json") or []
         clusters = store.read_json(run_id, "clusters.json") or []

@@ -21,6 +21,65 @@ function sentimentColor(s) {
 
 function sizeOf(ele) { return 26 + Math.sqrt(ele.data("size") || 0) * 10; }
 
+function sentParts(s) {
+  s = s || {};
+  const pos = +s.pos || 0, neu = +s.neu || 0, neg = +s.neg || 0;
+  const total = pos + neu + neg || 1;
+  return { pos, neu, neg,
+    pPos: Math.round((pos / total) * 100),
+    pNeu: Math.round((neu / total) * 100),
+    pNeg: Math.round((neg / total) * 100) };
+}
+function dominantMood(s) {
+  const p = sentParts(s), m = Math.max(p.pos, p.neu, p.neg);
+  if (m === p.pos && p.pos > p.neg) return "mostly positive";
+  if (m === p.neg && p.neg > p.pos) return "mostly negative";
+  return "mixed / neutral";
+}
+
+let _graphTip = null;
+function tipEl() { return _graphTip || (_graphTip = document.getElementById("graphTip")); }
+function gtRow(...kids) { return elem("div", { class: "gt-row" }, ...kids); }
+function showTip(node, x, y) {
+  const t = tipEl(); if (!t) return;
+  clearNode(t); t.appendChild(node);
+  t.style.left = x + "px"; t.style.top = y + "px"; t.hidden = false;
+}
+function hideTip() { const t = tipEl(); if (t) t.hidden = true; }
+
+function nodeTip(d) {
+  const p = sentParts(d.sentiment);
+  return elem("div", null,
+    elem("div", { class: "gt-title" }, d.label),
+    gtRow(elem("span", null, "Posts"), elem("b", null, String(d.size))),
+    gtRow(elem("span", null, "Mood"), elem("b", null, dominantMood(d.sentiment))),
+    gtRow(elem("span", null, `😊 ${p.pPos}%`),
+          elem("span", null, `😐 ${p.pNeu}%`),
+          elem("span", null, `😞 ${p.pNeg}%`)));
+}
+function edgeTip(a, b, w) {
+  return elem("div", null,
+    elem("div", { class: "gt-title" }, "Related talking points"),
+    gtRow(elem("span", null, a)),
+    gtRow(elem("span", null, b)),
+    gtRow(elem("span", null, "Similarity"), elem("b", null, Math.round(w * 100) + "%")));
+}
+
+// Screen-reader summary only: a network graph is opaque to assistive tech, so
+// we restate its gist as text (WCAG screen-reader-summary). No visual list.
+function buildGraphAux(rawNodes, edges) {
+  const sumEl = document.getElementById("graphSummary");
+  if (!sumEl) return;
+  if (!rawNodes.length) {
+    sumEl.textContent = "No talking points yet. Run a topic to build the graph.";
+    return;
+  }
+  const top = rawNodes.slice().sort((a, b) => (b.data.size || 0) - (a.data.size || 0))[0].data;
+  sumEl.textContent = `Topic graph with ${rawNodes.length} talking points and `
+    + `${edges.length} connection${edges.length === 1 ? "" : "s"} between related ones. `
+    + `Largest: "${top.label}", ${top.size} posts, ${dominantMood(top.sentiment)}.`;
+}
+
 function lightenRgb(rgb, amt) {
   const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb || "");
   if (!m) return rgb;
@@ -76,6 +135,10 @@ async function drawGraph(rid) {
   const edges = j.edges || [];
   const hint = $("#graphHint");
   if (hint) hint.classList.toggle("hidden", nodes.length > 0);
+  buildGraphAux(nodes, edges);
+  hideTip();
+  const labelById = {};
+  nodes.forEach((n) => (labelById[n.data.id] = n.data.label));
   stopGraphSpin();
   if (cy) cy.destroy();
   if (!nodes.length) {
@@ -131,12 +194,22 @@ async function drawGraph(rid) {
     cy.elements().addClass("faded");
     nb.removeClass("faded").addClass("hl");
     if (graphSpin) graphSpin.paused = true;
+    const p = e.target.renderedPosition();
+    showTip(nodeTip(e.target.data()), p.x, p.y - sizeOf(e.target) / 2);
   });
   cy.on("mouseout", "node", () => {
     cy.elements().removeClass("faded hl");
     if (graphSpin) { graphSpin.last = performance.now(); graphSpin.paused = false; }
+    hideTip();
   });
-  cy.on("grab", "node", () => { if (graphSpin) graphSpin.paused = true; });
+  cy.on("mouseover", "edge", (e) => {
+    e.target.addClass("hl");
+    const d = e.target.data(), m = e.target.midpoint(), z = cy.zoom(), pan = cy.pan();
+    showTip(edgeTip(labelById[d.source], labelById[d.target], d.weight || 0),
+            m.x * z + pan.x, m.y * z + pan.y);
+  });
+  cy.on("mouseout", "edge", (e) => { e.target.removeClass("hl"); hideTip(); });
+  cy.on("grab", "node", () => { if (graphSpin) graphSpin.paused = true; hideTip(); });
   // Dragging reseats nodes, so rebuild the orbit from their new positions.
   cy.on("free", "node", () => startGraphSpin());
   cy.on("layoutstop", () => { cy.fit(undefined, 40); startGraphSpin(); });

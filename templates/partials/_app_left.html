@@ -1,11 +1,6 @@
     <section class="col">
       <div class="panel">
-        <h2 class="orch-head">
-          Run Agent
-          <span class="pill orch-pill">
-            <span class="orch-pill-dot"></span>Powered by LangGraph
-          </span>
-        </h2>
+        <h2>Run Agent</h2>
         <div style="display:flex;flex-direction:column;gap:16px">
           <textarea id="topic" rows="3" placeholder="What do you want to know? e.g. skeptical about wireless headphones — what&#39;s best this year? compare Bose &amp; Sony"></textarea>
           <div class="row" style="flex-wrap:wrap">
@@ -22,29 +17,6 @@
           <button id="go" class="cta-primary">Start agent</button>
         </div>
 
-        <details class="orch-explainer" style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
-          <summary>How this works · LangGraph state machine</summary>
-          <p>
-            Each run executes as an explicit, resumable LangGraph state machine.
-            The nodes below fire in order — adding engagement alerting and
-            automatic failure-recovery on top of the core analysis pipeline.
-          </p>
-        </details>
-
-        <div id="orch-timeline" class="orch-timeline">
-          <div class="orch-node" data-node="crawl"><span class="orch-dot"></span><span class="orch-name">crawl</span><span class="orch-info" data-info></span></div>
-          <div class="orch-node" data-node="score"><span class="orch-dot"></span><span class="orch-name">score</span><span class="orch-info" data-info></span></div>
-          <div class="orch-node" data-node="alert"><span class="orch-dot"></span><span class="orch-name">alert</span><span class="orch-info" data-info></span></div>
-          <div class="orch-node" data-node="recover"><span class="orch-dot"></span><span class="orch-name">recover</span><span class="orch-info" data-info></span></div>
-          <div class="orch-node" data-node="done"><span class="orch-dot"></span><span class="orch-name">done</span><span class="orch-info" data-info></span></div>
-        </div>
-
-        <div id="orch-result" class="grid3" style="display:none;margin-top:18px">
-          <div class="kpi"><span>Items</span><b id="orch-items">0</b></div>
-          <div class="kpi"><span>Peak score</span><b id="orch-peak">--</b></div>
-          <div class="kpi"><span>Retries</span><b id="orch-retries">0</b></div>
-        </div>
-        <div id="orch-alerted" class="muted" style="display:none;margin-top:10px"></div>
       </div>
 
       <div class="panel">

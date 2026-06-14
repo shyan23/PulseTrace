@@ -39,3 +39,51 @@ def test_polymarket_network_error_returns_empty():
     with patch("lib.connectors.polymarket.requests.get",
                side_effect=requests.RequestException("boom")):
         assert PolymarketConnector().fetch("x") == []
+
+
+def test_polymarket_surfaces_odds_as_percentages_in_text():
+    payload = {"events": [{
+        "id": "9", "title": "Brazil vs Morocco", "slug": "bra-mar",
+        "active": True, "closed": False,
+        "markets": [{
+            "question": "Will Brazil win?", "active": True, "closed": False,
+            "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.58\", \"0.42\"]",
+        }],
+    }]}
+    with patch("lib.connectors.polymarket.requests.get", return_value=_resp(payload)):
+        post = PolymarketConnector().fetch("brazil", limit=5)[0]
+    assert "Will Brazil win?" in post.text
+    assert "Yes 58%" in post.text and "No 42%" in post.text
+
+
+def test_polymarket_stashes_structured_odds_in_raw():
+    payload = {"events": [{
+        "id": "9", "title": "Brazil vs Morocco", "slug": "bra-mar",
+        "active": True, "closed": False,
+        "markets": [{
+            "question": "Will Brazil win?", "active": True, "closed": False,
+            "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.58\", \"0.42\"]",
+        }],
+    }]}
+    with patch("lib.connectors.polymarket.requests.get", return_value=_resp(payload)):
+        post = PolymarketConnector().fetch("brazil", limit=5)[0]
+    odds = post.raw["odds"]
+    assert odds == [{
+        "question": "Will Brazil win?",
+        "outcomes": [{"name": "Yes", "prob": 0.58}, {"name": "No", "prob": 0.42}],
+    }]
+
+
+def test_polymarket_tolerates_malformed_prices():
+    payload = {"events": [{
+        "id": "9", "title": "Brazil vs Morocco", "slug": "bra-mar",
+        "active": True, "closed": False,
+        "markets": [{
+            "question": "Will Brazil win?", "active": True, "closed": False,
+            "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "not-json",
+        }],
+    }]}
+    with patch("lib.connectors.polymarket.requests.get", return_value=_resp(payload)):
+        post = PolymarketConnector().fetch("brazil", limit=5)[0]
+    assert "Will Brazil win?" in post.text
+    assert post.raw.get("odds") == []

@@ -6,6 +6,7 @@ prices a probability, which complements free-text opinion from other sources.
 Returns [] on any failure so the agent loop tolerates absence.
 """
 from __future__ import annotations
+import json
 import time
 from urllib.parse import urlencode
 
@@ -16,15 +17,55 @@ from .base import Connector, Post
 SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
 
 
+def _parse_odds(outcomes_raw, prices_raw) -> list[dict]:
+    """Gamma returns `outcomes`/`outcomePrices` as JSON-encoded string arrays.
+
+    Pair them into [{"name", "prob"}]. Any malformation yields [] so the crowd's
+    priced probability is best-effort, never fatal.
+    """
+    try:
+        names = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
+        prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(names, list) or not isinstance(prices, list):
+        return []
+    out: list[dict] = []
+    for name, price in zip(names, prices):
+        try:
+            out.append({"name": str(name), "prob": float(price)})
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 def _market_lines(markets: list[dict]) -> list[str]:
     lines: list[str] = []
     for m in markets:
         if m.get("closed") or not m.get("active", True):
             continue
         q = (m.get("question") or "").strip()
-        if q:
+        if not q:
+            continue
+        odds = _parse_odds(m.get("outcomes"), m.get("outcomePrices"))
+        if odds:
+            priced = ", ".join(f"{o['name']} {o['prob'] * 100:.0f}%" for o in odds)
+            lines.append(f"{q} — {priced}")
+        else:
             lines.append(q)
     return lines
+
+
+def _market_odds(markets: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for m in markets:
+        if m.get("closed") or not m.get("active", True):
+            continue
+        q = (m.get("question") or "").strip()
+        odds = _parse_odds(m.get("outcomes"), m.get("outcomePrices"))
+        if q and odds:
+            out.append({"question": q, "outcomes": odds})
+    return out
 
 
 def _iso_to_epoch(value: str | None) -> int:
@@ -66,7 +107,8 @@ def _parse(events: list[dict]) -> list[Post]:
             reactions=volume,
             comments=len(markets),
             shares=0,
-            raw={"slug": slug, "market_count": len(markets)},
+            raw={"slug": slug, "market_count": len(markets),
+                 "odds": _market_odds(markets)},
         ))
     return out
 

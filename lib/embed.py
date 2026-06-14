@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 import requests
 
-from . import backend
+from . import backend, keypool
 
 
 CACHE_PATH = Path("data/embed_cache.jsonl")
@@ -71,16 +71,24 @@ def _append_cache(rows: list[tuple[str, list[float]]]) -> None:
 
 def _embed_openai_compat(p: backend.Provider, texts: list[str], batch: int) -> list[list[float]]:
     from openai import OpenAI
-    kwargs: dict[str, Any] = {"api_key": os.environ.get(p.key_env) or "EMPTY"}
-    if p.base_url:
-        kwargs["base_url"] = p.base_url
-    client = OpenAI(**kwargs)
-    out: list[list[float]] = []
-    for start in range(0, len(texts), batch):
-        chunk = [t[:8000] for t in texts[start:start + batch]]
-        resp = client.embeddings.create(model=p.embed_model, input=chunk)
-        out.extend(d.embedding for d in resp.data)
-    return out
+    is_gemini = p.key_env == "GEMINI_API_KEY"
+    while True:
+        key = keypool.current_gemini_key() if is_gemini else (os.environ.get(p.key_env) or "EMPTY")
+        kwargs: dict[str, Any] = {"api_key": key}
+        if p.base_url:
+            kwargs["base_url"] = p.base_url
+        client = OpenAI(**kwargs)
+        try:
+            out: list[list[float]] = []
+            for start in range(0, len(texts), batch):
+                chunk = [t[:8000] for t in texts[start:start + batch]]
+                resp = client.embeddings.create(model=p.embed_model, input=chunk)
+                out.extend(d.embedding for d in resp.data)
+            return out
+        except Exception as e:
+            if is_gemini and keypool.is_quota_error(e) and keypool.advance_gemini_key():
+                continue
+            raise
 
 
 def _embed_ollama_native(texts: list[str]) -> list[list[float]]:

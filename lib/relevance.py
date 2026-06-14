@@ -168,3 +168,17 @@ def weighted_relevance(terms: list[Term], text: str) -> float:
     total = sum(t.weight for t in terms) or 1.0
     matched = sum(t.weight for t, tt in zip(terms, term_tokens) if tt & tokens)
     return round(matched / total, 3)
+
+
+def select_on_topic(terms: list[Term], texts: list[str], floor: float) -> list[int]:
+    """Indices of `texts` clearing the relevance `floor` — quality over recall.
+
+    The gate applies however few survive (no minimum-count recall guard): one
+    clean post beats six noisy ones. Only when NOTHING clears the floor do we
+    fall back to every index, so the run still has something to cluster instead
+    of crashing on an empty corpus.
+    """
+    keep = [i for i, t in enumerate(texts) if weighted_relevance(terms, t) >= floor]
+    if keep:
+        return keep
+    return list(range(len(texts)))

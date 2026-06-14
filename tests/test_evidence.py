@@ -110,6 +110,68 @@ def test_build_handles_string_cluster_ids(tmp_path, monkeypatch):
     assert claim["source_categories"] != ["unknown"]
 
 
+def _seed_prediction_run(run_id):
+    write_json(run_id, "run.json", {"id": run_id, "topic": "Brazil vs Morocco World Cup 2026",
+                                    "sources": ["reddit", "polymarket"]})
+    write_json(run_id, "clusters.json", [
+        {"id": 0, "label": "Match buzz", "desc": "fans", "centroid": [],
+         "members": ["reddit:1", "polymarket:9"], "sentiment": {"pos": 0.6, "neu": 0.3, "neg": 0.1},
+         "top_posts": ["reddit:1"]},
+    ])
+    write_json(run_id, "posts.json", [
+        {"id": "reddit:1", "source": "reddit", "text": "Brazil looking strong", "ts": 100,
+         "reactions": 10, "comments": 4, "shares": 1, "author": None, "url": None, "raw": {}},
+        {"id": "polymarket:9", "source": "polymarket",
+         "text": "Brazil vs Morocco\n\nWill Brazil win? — Yes 58%, No 42%", "ts": 100,
+         "reactions": 0, "comments": 1, "shares": 0, "author": None,
+         "url": "https://polymarket.com/event/bra-mar",
+         "raw": {"odds": [{"question": "Will Brazil win?",
+                           "outcomes": [{"name": "Yes", "prob": 0.58},
+                                        {"name": "No", "prob": 0.42}]}]}},
+    ])
+
+
+def test_market_signal_collects_polymarket_odds(tmp_path, monkeypatch):
+    monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
+    run_id = "p1"
+    _seed_prediction_run(run_id)
+    with patch("lib.evidence.chat_json", return_value=_FAKE_LLM):
+        out = evidence.build(run_id, opinion=None)
+    sig = out["market_signal"]
+    assert len(sig) == 1
+    assert sig[0]["url"] == "https://polymarket.com/event/bra-mar"
+    assert sig[0]["markets"][0]["outcomes"][0]["prob"] == 0.58
+
+
+def test_forecast_field_preserves_numbers(tmp_path, monkeypatch):
+    monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
+    run_id = "p2"
+    _seed_prediction_run(run_id)
+    llm = {**_FAKE_LLM,
+           "forecast": {"summary": "Market prices Brazil 58% to win; fans expect 2-1.",
+                        "lines": ["Brazil win: 58% (market)", "Likely score: 2-1"]}}
+    with patch("lib.evidence.chat_json", return_value=llm):
+        out = evidence.build(run_id, opinion=None)
+    # number-scrub must NOT touch the forecast block
+    assert "58%" in out["forecast"]["summary"]
+    assert "Brazil win: 58% (market)" in out["forecast"]["lines"]
+
+
+def test_market_odds_reach_llm_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
+    run_id = "p3"
+    _seed_prediction_run(run_id)
+    captured = {}
+
+    def fake(system, user, **kw):
+        captured["user"] = user
+        return _FAKE_LLM
+
+    with patch("lib.evidence.chat_json", side_effect=fake):
+        evidence.build(run_id, opinion=None)
+    assert "58%" in captured["user"]
+
+
 def test_build_survives_llm_failure(tmp_path, monkeypatch):
     monkeypatch.setattr("lib.store.ROOT", tmp_path / "runs")
     run_id = "t3"

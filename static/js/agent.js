@@ -19,6 +19,7 @@ function blankDashboard() {
   if (sentChart) { sentChart.destroy(); sentChart = null; }
   if (cy) { cy.destroy(); cy = null; }
   { const h = $("#graphHint"); if (h) h.classList.remove("hidden"); }
+  if (typeof buildGraphAux === "function") buildGraphAux([], []);
   $("#m-posts").textContent = "0";
   $("#m-clusters").textContent = "0";
   { const e = $("#m-entropy"); if (e) e.textContent = "0.00"; }
@@ -83,7 +84,6 @@ async function start() {
   try { localStorage.setItem("pt:lastRunId", runId); } catch (e) {}
   $("#briefing-link").style.display = "none";
   $("#briefing-link").href = "#";
-  if (window.__orch) window.__orch.begin();
   plReset();
   plActivate("seed");
   plStatus("Run starting…");
@@ -146,11 +146,15 @@ function subscribe(rid) {
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     handle(ev);
-    if (window.__orch) window.__orch.handle(ev);
     if (ev.type === "done") {
-      // run_agent finished the analysis pipeline; the orchestration graph then
-      // scores/alerts before _close, so keep the stream open until then.
-      drawGraph(rid);
+      // Cytoscape measures #graph at init and renders blank if the full-screen
+      // loader still covers it, so defer the draw until that curtain lifts.
+      const pl2 = document.getElementById("pl2");
+      if (pl2 && pl2.classList.contains("open")) {
+        document.addEventListener("pl2:closed", () => drawGraph(rid), { once: true });
+      } else {
+        drawGraph(rid);
+      }
     }
     if (ev.type === "_close") {
       es.close();

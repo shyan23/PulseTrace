@@ -17,11 +17,11 @@ from typing import Any
 import requests
 from openai import OpenAI
 
-from . import backend, dispatch
+from . import backend, dispatch, keypool
 
 
-def _client_for(p: backend.Provider) -> OpenAI:
-    api_key = os.environ.get(p.key_env) or "EMPTY"
+def _client_for(p: backend.Provider, api_key: str | None = None) -> OpenAI:
+    api_key = api_key or os.environ.get(p.key_env) or "EMPTY"
     kwargs: dict[str, Any] = {"api_key": api_key}
     if p.base_url:
         kwargs["base_url"] = p.base_url
@@ -30,8 +30,8 @@ def _client_for(p: backend.Provider) -> OpenAI:
     return OpenAI(**kwargs)
 
 
-def _chat_openai_compat(p: backend.Provider, system: str, user: str, max_tokens: int) -> Any:
-    client = _client_for(p)
+def _attempt_chat(client: OpenAI, p: backend.Provider, system: str, user: str,
+                  max_tokens: int) -> tuple[Any, Exception | None]:
     last_err: Exception | None = None
     formats: list[dict[str, Any] | None] = [{"type": "json_object"}, None]
     for fmt in formats:
@@ -50,14 +50,27 @@ def _chat_openai_compat(p: backend.Provider, system: str, user: str, max_tokens:
                     kw["response_format"] = fmt
                 resp = client.chat.completions.create(**kw)
                 raw = resp.choices[0].message.content or "{}"
-                return _coerce_dict(_loads_lenient(raw))
+                return _coerce_dict(_loads_lenient(raw)), None
             except json.JSONDecodeError as e:
                 last_err = e
                 continue
             except Exception as e:
-                last_err = e
-                break
-    raise last_err or ValueError(f"{p.name}: no parseable JSON")
+                # Hard error (e.g. quota/429): surface so the caller can fail
+                # over to a backup key instead of burning the retry budget.
+                return None, e
+    return None, last_err or ValueError(f"{p.name}: no parseable JSON")
+
+
+def _chat_openai_compat(p: backend.Provider, system: str, user: str, max_tokens: int) -> Any:
+    is_gemini = p.key_env == "GEMINI_API_KEY"
+    while True:
+        key = keypool.current_gemini_key() if is_gemini else None
+        result, err = _attempt_chat(_client_for(p, key), p, system, user, max_tokens)
+        if err is None:
+            return result
+        if is_gemini and keypool.is_quota_error(err) and keypool.advance_gemini_key():
+            continue
+        raise err
 
 
 def _coerce_dict(payload: Any) -> dict:

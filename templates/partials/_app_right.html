@@ -1,13 +1,20 @@
     <section class="col">
       <div class="panel">
         <h2>Topic graph</h2>
+        <p class="graph-cap">Each <b>bubble</b> is a talking point we found. Bigger bubble = more
+          posts about it; color = the mood. A <b>line</b> joins two points that discuss closely
+          related things — clusters of connected bubbles are one larger conversation.</p>
         <div class="graph-wrap">
-          <div class="graph-legend">
-            <span><i style="background:var(--pos)"></i>Positive</span>
-            <span><i style="background:var(--neu)"></i>Neutral</span>
-            <span><i style="background:var(--neg)"></i>Negative</span>
+          <div class="graph-legend" role="group" aria-label="Graph legend">
+            <span class="lg-grp">
+              <i style="background:var(--pos)"></i><i style="background:var(--neu)"></i><i style="background:var(--neg)"></i>
+              mood
+            </span>
+            <span class="lg-grp"><i class="lg-sm"></i><i class="lg-lg"></i> volume</span>
+            <span class="lg-grp"><i class="lg-edge"></i> related</span>
           </div>
-          <div id="graph"></div>
+          <div id="graph" role="img" aria-describedby="graphSummary"></div>
+          <div class="graph-tip" id="graphTip" hidden></div>
           <div class="graph-zoom">
             <button type="button" id="gZoomIn" title="Zoom in">+</button>
             <button type="button" id="gZoomOut" title="Zoom out">−</button>
@@ -15,6 +22,7 @@
           </div>
           <div class="graph-hint" id="graphHint">Run a topic to render the sentiment graph</div>
         </div>
+        <p id="graphSummary" class="sr-only" aria-live="polite"></p>
       </div>
 
       <div class="grid2">

@@ -5,7 +5,41 @@ from lib.relevance import (
     extract_compound_terms,
     Term,
     weighted_relevance,
+    select_on_topic,
 )
+
+
+def _fixture_terms():
+    return [
+        Term("brazil", 1.0, False, ["brazil"]),
+        Term("morocco", 1.0, False, ["morocco"]),
+    ]
+
+
+def test_select_drops_offtopic_even_when_few_remain():
+    # quality over recall: gate applies no matter how few survive (no MIN_ONTOPIC)
+    texts = [
+        "Brazil vs Morocco preview, both squads named",   # on-topic
+        "For months I found long hairs in my house",       # off-topic noise
+        "AITA for skipping my brother's wedding",           # off-topic noise
+    ]
+    keep = select_on_topic(_fixture_terms(), texts, 0.30)
+    assert keep == [0]
+
+
+def test_select_keeps_all_when_nothing_dropped():
+    texts = ["Brazil thrash Morocco", "Morocco hold Brazil to a draw"]
+    assert select_on_topic(_fixture_terms(), texts, 0.30) == [0, 1]
+
+
+def test_select_falls_back_to_all_when_nothing_on_topic():
+    # never empty the corpus to zero — clustering needs something to chew on
+    texts = ["totally unrelated post", "another off-topic ramble"]
+    assert select_on_topic(_fixture_terms(), texts, 0.30) == [0, 1]
+
+
+def test_select_empty_input_empty_output():
+    assert select_on_topic(_fixture_terms(), [], 0.30) == []
 
 
 def test_exact_phrase_scores_high():
