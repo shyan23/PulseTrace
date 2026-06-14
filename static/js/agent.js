@@ -141,20 +141,29 @@ async function revealBriefingIfReady(rid) {
   } catch (e) {}
 }
 
+// Draw the topic graph once, when the full-screen loader has lifted (cytoscape
+// measures #graph at init and renders blank if the curtain still covers it).
+// Belt-and-suspenders: also fire on a fallback timer so a missed pl2:closed
+// event can never leave the graph blank after a completed run.
+function scheduleGraph(rid) {
+  let drawn = false;
+  const go = () => { if (drawn) return; drawn = true; drawGraph(rid); };
+  const pl2 = document.getElementById("pl2");
+  if (pl2 && pl2.classList.contains("open")) {
+    document.addEventListener("pl2:closed", go, { once: true });
+    setTimeout(go, 2500);
+  } else {
+    go();
+  }
+}
+
 function subscribe(rid) {
   const es = new EventSource("/events?run_id=" + encodeURIComponent(rid));
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     handle(ev);
     if (ev.type === "done") {
-      // Cytoscape measures #graph at init and renders blank if the full-screen
-      // loader still covers it, so defer the draw until that curtain lifts.
-      const pl2 = document.getElementById("pl2");
-      if (pl2 && pl2.classList.contains("open")) {
-        document.addEventListener("pl2:closed", () => drawGraph(rid), { once: true });
-      } else {
-        drawGraph(rid);
-      }
+      scheduleGraph(rid);
     }
     if (ev.type === "_close") {
       es.close();
