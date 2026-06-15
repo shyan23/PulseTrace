@@ -1,7 +1,10 @@
 """Agent loop: seed queries -> fetch -> cluster -> label -> expand or stop."""
 from __future__ import annotations
+import asyncio
+import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .connectors.base import Connector, Post
 from .connectors.reddit import RedditConnector
 from .connectors.hn import HNConnector
@@ -120,6 +123,58 @@ def _build_connector(src: str, run_id: str | None,
         return None
 
 
+# Wall-clock budget for a single connector call. A source that exceeds it is
+# abandoned for this iteration (its worker thread finishes in the background and
+# is ignored) so one slow/hung source can never stall the agent loop.
+FETCH_TIMEOUT = float(os.environ.get("PULSETRACE_FETCH_TIMEOUT", "25"))
+FETCH_CONCURRENCY = 12
+
+
+async def _fanout_async(calls: list[tuple[Callable, tuple]],
+                        timeout: float) -> list[list[Post]]:
+    sem = asyncio.Semaphore(FETCH_CONCURRENCY)
+
+    async def one(fn: Callable, args: tuple) -> list[Post]:
+        async with sem:
+            try:
+                return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout)
+            except (asyncio.TimeoutError, Exception):
+                return []
+
+    return await asyncio.gather(*(one(fn, args) for fn, args in calls))
+
+
+def _run_fanout(calls: list[tuple[Callable, tuple]], timeout: float) -> list[list[Post]]:
+    if not calls:
+        return []
+    try:
+        # Manual loop (not asyncio.run): asyncio.run joins the default executor
+        # on shutdown, which would re-block on a timed-out source's straggler
+        # thread. We close the loop without waiting so stragglers are abandoned.
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_fanout_async(calls, timeout))
+        finally:
+            loop.close()
+    except RuntimeError:
+        # An event loop is already running in this thread (rare in the sync
+        # agent). Fall back to a thread pool with the same per-call deadline.
+        out: list[list[Post]] = []
+        with ThreadPoolExecutor(max_workers=min(FETCH_CONCURRENCY, len(calls))) as ex:
+            fut_map = {ex.submit(fn, *args): i for i, (fn, args) in enumerate(calls)}
+            results: dict[int, list[Post]] = {}
+            try:
+                for fut in as_completed(fut_map, timeout=timeout):
+                    try:
+                        results[fut_map[fut]] = fut.result()
+                    except Exception:
+                        results[fut_map[fut]] = []
+            except TimeoutError:
+                pass
+            out = [results.get(i, []) for i in range(len(calls))]
+        return out
+
+
 def _fetch_all(queries: list[tuple[str, str]], limit: int,
                run_id: str | None = None, iter_no: int = 0) -> list[Post]:
     by_src: dict[str, list[str]] = {}
@@ -128,29 +183,24 @@ def _fetch_all(queries: list[tuple[str, str]], limit: int,
             continue
         by_src.setdefault(src, []).append(q)
 
-    posts: list[Post] = []
-    serial_calls: list[tuple[Connector, str]] = []
+    # One concurrent fan-out for every connector call this iteration — batch
+    # (fetch_many) and per-query alike — so no source runs ahead of or blocks
+    # the others.
+    calls: list[tuple[Callable, tuple]] = []
     for src, qs in by_src.items():
         conn = _build_connector(src, run_id, iter_no)
         if conn is None:
             continue
         if getattr(conn, "supports_batch", False) and hasattr(conn, "fetch_many"):
-            try:
-                posts.extend(conn.fetch_many(qs, limit))
-            except Exception:
-                pass
+            calls.append((conn.fetch_many, (qs, limit)))
         else:
             for q in qs:
-                serial_calls.append((conn, q))
+                calls.append((conn.fetch, (q, limit)))
 
-    if serial_calls:
-        with ThreadPoolExecutor(max_workers=min(12, len(serial_calls))) as ex:
-            futures = [ex.submit(c.fetch, q, limit) for c, q in serial_calls]
-            for f in futures:
-                try:
-                    posts.extend(f.result())
-                except Exception:
-                    continue
+    posts: list[Post] = []
+    for batch in _run_fanout(calls, FETCH_TIMEOUT):
+        if batch:
+            posts.extend(batch)
     return posts
 
 
