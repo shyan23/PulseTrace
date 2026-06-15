@@ -163,7 +163,7 @@ function drawEvidenceCharts() {
   const claims = ev.claims || [];
   const cfCtx = $("#confChart");
   if (cfCtx && claims.length) {
-    const labels = claims.map(c => String(c.text || "").slice(0, 28));
+    const labels = claims.map(c => String(c.cluster_label || c.text || "").slice(0, 32));
     const vals = claims.map(c => Math.round((Math.max(0, Math.min(1, Number(c.confidence) || 0))) * 100));
     const colors = claims.map(c => {
       const s = String(c.evidence_strength || "weak").toLowerCase();

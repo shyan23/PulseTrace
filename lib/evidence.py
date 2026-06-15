@@ -111,10 +111,11 @@ def build(run_id: str, opinion: str | None) -> dict:
     max_members = max((len(c.get("members", [])) for c in clusters), default=0)
     members_by_cid = {int(c["id"]): [posts_by_id[m] for m in c.get("members", [])
                                      if m in posts_by_id] for c in clusters}
+    labels_by_cid = {int(c["id"]): str(c.get("label", "")) for c in clusters}
     market_signal = _market_signal(posts_raw)
     llm = _llm_analyze(run.get("topic", ""), opinion, clusters, members_by_cid, market_signal)
 
-    claims = [_enrich_claim(c, members_by_cid, max_members, now)
+    claims = [_enrich_claim(c, members_by_cid, labels_by_cid, max_members, now)
               for c in llm.get("claims", [])]
     if opinion is None:
         for c in claims:
@@ -181,7 +182,7 @@ def _market_block(market_signal: list[dict]) -> str:
 
 
 def _enrich_claim(claim: dict, members_by_cid: dict[int, list[Post]],
-                  max_members: int, now: int) -> dict:
+                  labels_by_cid: dict[int, str], max_members: int, now: int) -> dict:
     cids = _coerce_cids(claim.get("cluster_ids", []))
     posts: list[Post] = []
     for cid in cids:
@@ -198,6 +199,7 @@ def _enrich_claim(claim: dict, members_by_cid: dict[int, list[Post]],
         "reasoning": _scrub(str(claim.get("reasoning", ""))),
         "source_categories": cats,
         "cluster_ids": cids,
+        "cluster_label": next((labels_by_cid[c] for c in cids if c in labels_by_cid), ""),
         "ranking": ranking,
     }
 
