@@ -16,6 +16,7 @@ import numpy as np
 import requests
 
 from . import backend, keypool
+from .embedcache import get_embed_cache
 
 
 CACHE_PATH = Path("data/embed_cache.jsonl")
@@ -116,7 +117,10 @@ def embed_texts(texts: list[str], batch: int = 100) -> np.ndarray:
         return np.zeros((0, max(dim, 1)), dtype=np.float32)
 
     keys = [_key(t) for t in texts]
-    cache = _load_cached(set(keys))
+    # Redis when REDIS_URL is set + reachable (multi-worker safe), else the
+    # append-only JSONL file. Same sha1 keys, so the two never collide.
+    store = get_embed_cache()
+    cache = store.get_many(keys) if store else _load_cached(set(keys))
 
     # Collapse duplicate texts to a single embedding call: identical strings
     # share a key, so embedding them more than once just burns tokens and
@@ -136,7 +140,10 @@ def embed_texts(texts: list[str], batch: int = 100) -> np.ndarray:
         new_rows = list(zip(miss_keys, vectors))
         for k, v in new_rows:
             cache[k] = v
-        _append_cache(new_rows)
+        if store:
+            store.put_many(new_rows)
+        else:
+            _append_cache(new_rows)
 
     arr = np.array([cache[k] for k in keys], dtype=np.float32)
     norms = np.linalg.norm(arr, axis=1, keepdims=True)
