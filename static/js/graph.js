@@ -125,10 +125,27 @@ function startGraphSpin() {
   state.raf = requestAnimationFrame(frame);
 }
 
-async function drawGraph(rid) {
-  const r = await fetch("/graph?run_id=" + encodeURIComponent(rid));
-  const j = await r.json();
-  const nodes = (j.nodes || []).map((n) => {
+// A run's clusters.json may not be flushed (or the request may transiently fail
+// /401) at the instant the "done" curtain lifts. The backend always returns the
+// nodes once they exist, so a draw that comes back empty is retried a few times
+// before we accept it as a genuinely empty run and clear the canvas.
+async function drawGraph(rid, _attempt = 0) {
+  if (_attempt === 0) window._graphRid = rid;       // newest request wins
+  let j = { nodes: [], edges: [] };
+  try {
+    const r = await fetch("/graph?run_id=" + encodeURIComponent(rid),
+                          { credentials: "same-origin" });
+    if (r.ok) j = await r.json();
+  } catch (e) { /* network hiccup → treated as empty, retried below */ }
+
+  if (window._graphRid !== rid) return;             // superseded by a newer run
+  const incoming = j.nodes || [];
+  if (!incoming.length && _attempt < 6) {
+    setTimeout(() => { drawGraph(rid, _attempt + 1).catch(() => {}); }, 800);
+    return;
+  }
+
+  const nodes = incoming.map((n) => {
     const color = sentimentColor(n.data.sentiment);
     return { data: { ...n.data, _color: color, _hi: lightenRgb(color, 0.55) } };
   });

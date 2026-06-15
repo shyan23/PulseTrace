@@ -18,6 +18,7 @@ function blankDashboard() {
   clearNode($("#clusters"));
   if (sentChart) { sentChart.destroy(); sentChart = null; }
   if (cy) { cy.destroy(); cy = null; }
+  window._graphRid = null;
   { const h = $("#graphHint"); if (h) h.classList.remove("hidden"); }
   if (typeof buildGraphAux === "function") buildGraphAux([], []);
   $("#m-posts").textContent = "0";
@@ -64,6 +65,7 @@ async function start() {
   $("#go").disabled = true;
   clearNode($("#clusters"));
   if (cy) { cy.destroy(); cy = null; }
+  window._graphRid = null;
   { const h = $("#graphHint"); if (h) h.classList.remove("hidden"); }
   if (sentChart) { sentChart.destroy(); sentChart = null; }
   log("Starting run for \"" + topic + "\" on [" + sources.join(", ") + "]...");
@@ -141,20 +143,16 @@ async function revealBriefingIfReady(rid) {
   } catch (e) {}
 }
 
-// Draw the topic graph once, when the full-screen loader has lifted (cytoscape
-// measures #graph at init and renders blank if the curtain still covers it).
-// Belt-and-suspenders: also fire on a fallback timer so a missed pl2:closed
-// event can never leave the graph blank after a completed run.
+// Draw the topic graph the moment the run completes. drawGraph self-heals the
+// two things the curtain used to gate: it retries while /graph is still empty,
+// and a ResizeObserver refits once #graph gains size. We no longer wait on a
+// pl2:closed event (a missed one left the graph blank) — we just refit once
+// more when the curtain lifts so the layout settles cleanly.
 function scheduleGraph(rid) {
-  let drawn = false;
-  const go = () => { if (drawn) return; drawn = true; drawGraph(rid); };
-  const pl2 = document.getElementById("pl2");
-  if (pl2 && pl2.classList.contains("open")) {
-    document.addEventListener("pl2:closed", go, { once: true });
-    setTimeout(go, 2500);
-  } else {
-    go();
-  }
+  drawGraph(rid).catch(() => {});
+  document.addEventListener("pl2:closed", () => {
+    if (cy) { cy.resize(); cy.fit(undefined, 40); }
+  }, { once: true });
 }
 
 function subscribe(rid) {
