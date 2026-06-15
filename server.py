@@ -9,7 +9,9 @@ import threading
 import time
 import subprocess
 from urllib.parse import quote
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context, redirect
+import io
+import zipfile
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, redirect, send_file
 from flask_cors import CORS
 import numpy as np
 from dotenv import load_dotenv
@@ -25,6 +27,7 @@ from lib.orchestration.runner import run_graph_streamed
 from lib.briefing import build as build_briefing
 from lib.events import BUS, sse_format
 from lib.store import read_json, write_json, new_run_id, run_dir, ROOT
+from lib.obsidian import build_vault as build_obsidian_vault, _slug as _obs_slug
 from lib.replay import frame as replay_frame, max_iter as replay_max_iter
 from lib.rag import ask as rag_ask
 from lib import backend, fb_cookies, docs as docs_mod
@@ -634,6 +637,28 @@ def run_evidence(run_id):
     if data is None:
         return jsonify({"error": "not generated"}), 404
     return jsonify(data)
+
+
+@app.route("/run/<run_id>/obsidian")
+def run_obsidian(run_id: str):
+    if not _user_owns_run(run_id):
+        return jsonify({"error": "forbidden"}), 403
+    run = read_json(run_id, "run.json")
+    clusters = read_json(run_id, "clusters.json") or []
+    if not run or not clusters:
+        return jsonify({"error": "run not ready"}), 404
+    posts = read_json(run_id, "posts.json") or []
+    evidence = read_json(run_id, "evidence.json")
+    vault = build_obsidian_vault(run, clusters, posts, evidence)
+
+    folder = f"PulseTrace - {_obs_slug(run.get('topic', 'run'))} ({run_id})"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for relpath, content in vault.items():
+            zf.writestr(f"{folder}/{relpath}", content)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"{folder}.zip")
 
 
 @app.route("/fb/cookies/status")

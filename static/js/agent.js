@@ -27,6 +27,7 @@ function blankDashboard() {
   $("#voices").style.display = "none";
   $("#evidence").style.display = "none";
   const bl = $("#briefing-link"); bl.style.display = "none"; bl.href = "#";
+  { const ob = $("#obsidian-link"); if (ob) ob.style.display = "none"; }
   document.querySelectorAll("#history-list .hist-row.active")
     .forEach(r => r.classList.remove("active"));
 }
@@ -127,6 +128,42 @@ async function downloadBriefing(e) {
     return;
   }
   link.textContent = orig;
+}
+
+async function exportObsidian(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  if (!runId) return;
+  const link = $("#obsidian-link");
+  const orig = link.textContent;
+  link.textContent = "⏳ packing…";
+  try {
+    const r = await fetch("/run/" + encodeURIComponent(runId) + "/obsidian",
+                          { credentials: "same-origin" });
+    if (!r.ok) {
+      link.textContent = "⚠ " + r.status;
+      setTimeout(() => link.textContent = orig, 2500);
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const cd = r.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/i);
+    a.download = m ? m[1] : ((runId || "run") + "-obsidian.zip");
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (err) {
+    link.textContent = "⚠ failed";
+    setTimeout(() => link.textContent = orig, 2500);
+    return;
+  }
+  link.textContent = orig;
+}
+
+function showObsidianExport() {
+  const link = $("#obsidian-link");
+  if (link && runId) link.style.display = "inline-flex";
 }
 
 async function revealBriefingIfReady(rid) {
@@ -308,6 +345,7 @@ function handle(ev) {
       plMark("label", "done");
       plStatus("Run complete · " + (ev.n_posts || 0) + " posts");
       { const ns = $("#nav-shots"); if (ns) ns.style.display = "inline-flex"; }
+      showObsidianExport();
       break;
   }
 }

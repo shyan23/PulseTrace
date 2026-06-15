@@ -84,6 +84,7 @@ async function restoreRun(rid) {
   if (m.clusters != null) $("#m-clusters").textContent = m.clusters;
   if (run.topic && !$("#topic").value) $("#topic").value = run.topic;
   revealBriefingIfReady(rid);
+  showObsidianExport();
   drawGraph(rid).catch(() => {});
   loadVoices();
   fetch("/run/" + encodeURIComponent(rid) + "/evidence")
