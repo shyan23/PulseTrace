@@ -12,9 +12,9 @@
   --accent: #10B981;    /* Emerald */
   --accent2: #2563EB;   /* Blue */
   --accent3: #8B5CF6;   /* Violet */
-  --neg: #EF4444;       /* Red */
-  --pos: #10B981;       /* Emerald */
-  --neu: #A1A1AA;       /* Zinc */
+  --neg: #F59E0B;       /* Amber — negative sentiment (colorblind-safe vs blue) */
+  --pos: #3B82F6;       /* Blue — positive sentiment */
+  --neu: #A1A1AA;       /* Zinc — neutral */
   --header-bg: rgba(255, 255, 255, 0.85);
   --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
@@ -31,8 +31,8 @@
   --accent2: #a78bfa;   /* Lavender — primary brand accent (borders, focus, hover, links) */
   --accent3: #c4b5fd;   /* Light lavender — brand glows/gradients */
   --accent4: #c9974e;   /* Bronze — tertiary accent (dividers, badges) */
-  --neg: #f87171;       /* Red — failure / negative sentiment */
-  --pos: #34d399;       /* Emerald — positive sentiment */
+  --neg: #fbbf24;       /* Amber — negative sentiment (colorblind-safe vs blue) */
+  --pos: #60a5fa;       /* Blue — positive sentiment */
   --neu: #8b8b96;       /* Gray — neutral sentiment */
   --header-bg: rgba(10, 10, 15, 0.85);
   --card-shadow: 0 10px 15px -3px rgba(0,0,0,0.4), 0 4px 6px -2px rgba(0,0,0,0.25);

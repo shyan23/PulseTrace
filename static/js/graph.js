@@ -4,20 +4,6 @@ if (window.cytoscapeFcose) cytoscape.use(window.cytoscapeFcose);
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
-function hexToRgb(h) {
-  h = h.replace("#", "");
-  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-function sentimentColor(s) {
-  s = s || {};
-  const pos = +s.pos || 0, neu = +s.neu || 0, neg = +s.neg || 0;
-  const total = pos + neu + neg || 1;
-  const [cp, cu, cn] = [cssVar("--pos"), cssVar("--neu"), cssVar("--neg")].map(hexToRgb);
-  const mix = [0, 1, 2].map((i) =>
-    Math.round((cp[i] * pos + cu[i] * neu + cn[i] * neg) / total));
-  return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
-}
 
 function sizeOf(ele) { return 26 + Math.sqrt(ele.data("size") || 0) * 10; }
 
@@ -80,12 +66,6 @@ function buildGraphAux(rawNodes, edges) {
     + `Largest: "${top.label}", ${top.size} posts, ${dominantMood(top.sentiment)}.`;
 }
 
-function lightenRgb(rgb, amt) {
-  const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb || "");
-  if (!m) return rgb;
-  const mix = [1, 2, 3].map((i) => Math.round(+m[i] + (255 - +m[i]) * amt));
-  return `rgb(${mix[0]},${mix[1]},${mix[2]})`;
-}
 
 let graphSpin = null;
 function stopGraphSpin() {
@@ -140,18 +120,16 @@ async function drawGraph(rid, _attempt = 0) {
 
   if (window._graphRid !== rid) return;             // superseded by a newer run
   const incoming = j.nodes || [];
-  { const g = document.getElementById("graph");
-    console.log("[graph] rid=" + rid + " attempt=" + _attempt
-      + " nodes=" + incoming.length
-      + " box=" + (g ? g.clientWidth + "x" + g.clientHeight : "no-el")); }
   if (!incoming.length && _attempt < 6) {
     setTimeout(() => { drawGraph(rid, _attempt + 1).catch(() => {}); }, 800);
     return;
   }
 
   const nodes = incoming.map((n) => {
-    const color = sentimentColor(n.data.sentiment);
-    return { data: { ...n.data, _color: color, _hi: lightenRgb(color, 0.55) } };
+    const p = sentParts(n.data.sentiment);
+    return { data: { ...n.data,
+      _pPos: p.pPos, _pNeu: p.pNeu, _pNeg: p.pNeg,
+      _label: n.data.label + "  ·  " + (n.data.size || 0) } };
   });
   const edges = j.edges || [];
   const hint = $("#graphHint");
@@ -177,12 +155,16 @@ async function drawGraph(rid, _attempt = 0) {
     minZoom: 0.2, maxZoom: 3, pixelRatio: "auto",
     style: [
       { selector: "node", style: {
-          "label": "data(label)", "color": txt, "font-size": "12px",
+          "label": "data(_label)", "color": txt, "font-size": "12px",
           "font-weight": 600, "font-family": "Inter, sans-serif",
-          "background-color": "data(_color)",
-          "background-fill": "radial-gradient",
-          "background-gradient-stop-colors": (ele) => ele.data("_hi") + " " + ele.data("_color"),
-          "background-gradient-stop-positions": "0% 100%",
+          "background-color": panel,
+          "pie-size": "100%",
+          "pie-1-background-color": cssVar("--pos"),
+          "pie-1-background-size": (ele) => ele.data("_pPos"),
+          "pie-2-background-color": cssVar("--neu"),
+          "pie-2-background-size": (ele) => ele.data("_pNeu"),
+          "pie-3-background-color": cssVar("--neg"),
+          "pie-3-background-size": (ele) => ele.data("_pNeg"),
           "border-width": 2, "border-color": panel, "border-opacity": 0.9,
           "width": sizeOf, "height": sizeOf,
           "text-valign": "bottom", "text-margin-y": 6,

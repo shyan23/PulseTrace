@@ -153,10 +153,7 @@ async function revealBriefingIfReady(rid) {
 function scheduleGraph(rid) {
   const pl2 = document.getElementById("pl2");
   const curtainUp = pl2 && pl2.classList.contains("open");
-  const draw = () => {
-    console.log("[graph] drawing rid=" + rid + " curtainUp(at done)=" + curtainUp);
-    drawGraph(rid).catch(() => {});
-  };
+  const draw = () => drawGraph(rid).catch(() => {});
   if (curtainUp) {
     document.addEventListener("pl2:closed", () => {
       draw();
