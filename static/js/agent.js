@@ -91,7 +91,7 @@ async function start() {
   plStatus("Run starting…");
   PL2.start();
   if (sources.includes("facebook")) {
-    $("#nav-shots").style.display = "inline-block";
+    const ns = $("#nav-shots"); if (ns) ns.style.display = "inline-block";
   }
   subscribe(runId);
 }
@@ -143,16 +143,28 @@ async function revealBriefingIfReady(rid) {
   } catch (e) {}
 }
 
-// Draw the topic graph the moment the run completes. drawGraph self-heals the
-// two things the curtain used to gate: it retries while /graph is still empty,
-// and a ResizeObserver refits once #graph gains size. We no longer wait on a
-// pl2:closed event (a missed one left the graph blank) — we just refit once
-// more when the curtain lifts so the layout settles cleanly.
+// The "done" event fires while the full-screen curtain (#pl2) is still up — it
+// lingers ~1.4s for the final flourish. #graph is occluded and not reliably
+// measurable underneath it, so a cytoscape init there renders blank and never
+// recovers (no size change → ResizeObserver never fires). We therefore defer
+// the draw to the moment the curtain lifts (pl2:closed), which is the only time
+// #graph is guaranteed unoccluded. If the curtain is already down (race / no
+// overlay), we draw immediately so a missed event can't leave it blank.
 function scheduleGraph(rid) {
-  drawGraph(rid).catch(() => {});
-  document.addEventListener("pl2:closed", () => {
-    if (cy) { cy.resize(); cy.fit(undefined, 40); }
-  }, { once: true });
+  const pl2 = document.getElementById("pl2");
+  const curtainUp = pl2 && pl2.classList.contains("open");
+  const draw = () => {
+    console.log("[graph] drawing rid=" + rid + " curtainUp(at done)=" + curtainUp);
+    drawGraph(rid).catch(() => {});
+  };
+  if (curtainUp) {
+    document.addEventListener("pl2:closed", () => {
+      draw();
+      if (cy) { cy.resize(); cy.fit(undefined, 40); }
+    }, { once: true });
+  } else {
+    draw();
+  }
 }
 
 function subscribe(rid) {
@@ -298,7 +310,7 @@ function handle(ev) {
     case "done":
       plMark("label", "done");
       plStatus("Run complete · " + (ev.n_posts || 0) + " posts");
-      $("#nav-shots").style.display = "inline-flex";
+      { const ns = $("#nav-shots"); if (ns) ns.style.display = "inline-flex"; }
       break;
   }
 }

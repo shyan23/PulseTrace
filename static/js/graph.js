@@ -140,6 +140,10 @@ async function drawGraph(rid, _attempt = 0) {
 
   if (window._graphRid !== rid) return;             // superseded by a newer run
   const incoming = j.nodes || [];
+  { const g = document.getElementById("graph");
+    console.log("[graph] rid=" + rid + " attempt=" + _attempt
+      + " nodes=" + incoming.length
+      + " box=" + (g ? g.clientWidth + "x" + g.clientHeight : "no-el")); }
   if (!incoming.length && _attempt < 6) {
     setTimeout(() => { drawGraph(rid, _attempt + 1).catch(() => {}); }, 800);
     return;
