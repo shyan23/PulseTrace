@@ -54,8 +54,10 @@ function refreshStatus(state) {
   el.className = "status-pill";
   if (!state) { el.classList.add("idle"); el.textContent = "No key validated yet"; return; }
   if (state.ok) {
-    el.classList.add("ok");
-    el.textContent = "✓ " + state.provider + " key " + (state.persisted ? "saved" : "validated");
+    el.classList.add(state.warning ? "warn" : "ok");
+    el.textContent = state.warning
+      ? "⚠ " + state.provider + " key saved — " + state.warning
+      : "✓ " + state.provider + " key " + (state.persisted ? "saved" : "validated");
   } else {
     el.classList.add("err");
     el.textContent = "✗ " + (state.error || "validation failed");
@@ -88,7 +90,7 @@ async function validateByok() {
     const j = await r.json();
     if (j.ok) {
       writeByok({ provider, api_key });
-      refreshStatus({ ok: true, provider, persisted: true });
+      refreshStatus({ ok: true, provider, persisted: true, warning: j.warning || "" });
       updateAppBadge();
       
       // Check if there's a pending search to resume

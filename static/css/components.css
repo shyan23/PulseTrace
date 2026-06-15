@@ -85,6 +85,7 @@
 .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; margin-top: 12px; }
 .status-pill.ok  { background: rgba(16,185,129,0.1); color: var(--pos); border: 1px solid rgba(16,185,129,0.2); }
 .status-pill.err { background: rgba(239,68,68,0.1); color: var(--neg); border: 1px solid rgba(239,68,68,0.2); }
+.status-pill.warn { background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
 .status-pill.idle { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); }
 .actions { display: flex; gap: 12px; margin-top: 32px; }
 .actions button { flex: 1; padding: 14px; border-radius: 12px; font-weight: 600; }

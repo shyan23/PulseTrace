@@ -370,6 +370,9 @@ def start_run():
                             "(Gemini-only beta)"}), 400
         if not (byok.get("api_key") or "").strip():
             return jsonify({"error": "api_key required when byok set"}), 400
+        ok, verr, _warn = _validate_byok(pid, (byok.get("api_key") or "").strip())
+        if not ok:
+            return jsonify({"error": verr}), 400
 
     run_id = new_run_id()
     from lib.store import set_run_owner
@@ -410,6 +413,9 @@ def start_orchestration_run():
                             "(Gemini-only beta)"}), 400
         if not (byok.get("api_key") or "").strip():
             return jsonify({"error": "api_key required when byok set"}), 400
+        ok, verr, _warn = _validate_byok(pid, (byok.get("api_key") or "").strip())
+        if not ok:
+            return jsonify({"error": verr}), 400
 
     run_id = new_run_id()
     from lib.store import set_run_owner
@@ -442,10 +448,82 @@ def list_providers():
     })
 
 
+_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+
+def _gemini_error(r) -> str:
+    """Turn a non-200 Gemini response into an actionable, key-free message."""
+    try:
+        err = r.json().get("error", {}) or {}
+    except ValueError:
+        err = {}
+    status = (err.get("status") or "").upper()
+    msg = err.get("message") or (r.text or "")[:200]
+    code = r.status_code
+    if code in (400, 401) or status == "INVALID_ARGUMENT" or "API_KEY_INVALID" in msg:
+        return "Invalid API key — check for typos or a revoked key."
+    if code == 403 or status in ("PERMISSION_DENIED", "PERMISSION_DENIED".lower()):
+        if "SERVICE_DISABLED" in msg or "has not been used" in msg:
+            return "Generative Language API is not enabled for this key's project."
+        return "Key rejected (permission denied) — it may be restricted or disabled."
+    if code == 429 or status == "RESOURCE_EXHAUSTED":
+        return ("Key is valid but rate-limited / out of quota right now. "
+                "Free-tier keys hit this fast — wait or use a billed key.")
+    if code == 404 or status == "NOT_FOUND":
+        return "The model this app uses isn't available to this key (deprecated or no access)."
+    return f"HTTP {code}: {msg[:160]}"
+
+
+def _validate_gemini_key(key: str) -> tuple[bool, str, str]:
+    """Real validation: list models AND run a 1-token generate on the model the
+    pipeline actually uses. Returns (ok, error, warning)."""
+    import requests as _rq
+    gem = backend.PROVIDERS["gemini"]
+    chat_model, embed_model = gem.chat_model, gem.embed_model
+    try:
+        lst = _rq.get(f"{_GEMINI_API_BASE}/models", params={"key": key}, timeout=10)
+    except _rq.RequestException as e:
+        return False, f"Could not reach Google: {type(e).__name__}", ""
+    if lst.status_code != 200:
+        return False, _gemini_error(lst), ""
+
+    names = {m.get("name", "").split("/")[-1] for m in lst.json().get("models", [])}
+    if chat_model not in names:
+        return False, (f"This key can't access {chat_model} (the model this app runs on). "
+                       "It may be an older/limited key."), ""
+
+    try:
+        gen = _rq.post(
+            f"{_GEMINI_API_BASE}/models/{chat_model}:generateContent",
+            params={"key": key},
+            json={"contents": [{"parts": [{"text": "ping"}]}],
+                  "generationConfig": {"maxOutputTokens": 1}},
+            timeout=15,
+        )
+    except _rq.RequestException as e:
+        return False, f"Could not reach Google: {type(e).__name__}", ""
+    if gen.status_code != 200:
+        return False, _gemini_error(gen), ""
+
+    warn = ""
+    if embed_model and embed_model not in names:
+        warn = (f"Chat works, but the embedding model {embed_model} isn't listed for this "
+                "key — clustering may fail. Use a key with embedding access.")
+    return True, "", warn
+
+
+def _validate_byok(pid: str, key: str) -> tuple[bool, str, str]:
+    """Dispatch to the provider validator. (ok, error, warning)."""
+    if pid == "gemini":
+        return _validate_gemini_key(key)
+    return True, "", ""  # other providers not wired for deep validation yet
+
+
 @app.route("/byok/validate", methods=["POST"])
 def byok_validate():
-    """Ping the provider's API with the supplied key. Returns {ok:true} or
-    {ok:false, error:...}. Only Gemini is wired right now; others reject."""
+    """Really exercise the supplied key against the model the pipeline uses,
+    surfacing invalid/disabled/rate-limited/older-model problems instead of
+    accepting anything that merely authenticates."""
     data = request.get_json(force=True, silent=True) or {}
     pid = (data.get("provider") or "").lower().strip()
     key = (data.get("api_key") or "").strip()
@@ -458,19 +536,13 @@ def byok_validate():
     if not key:
         return jsonify({"ok": False, "error": "api_key required"}), 400
 
-    import requests as _rq
     try:
-        url = spec["validate_url"].format(key=key)
-        r = _rq.get(url, timeout=10)
-        if r.status_code == 200:
-            return jsonify({"ok": True, "provider": pid})
-        try:
-            msg = r.json().get("error", {}).get("message", r.text[:200])
-        except Exception:
-            msg = r.text[:200]
-        return jsonify({"ok": False, "error": f"HTTP {r.status_code}: {msg}"}), 400
-    except Exception as e:
+        ok, error, warning = _validate_byok(pid, key)
+    except Exception as e:  # noqa: BLE001 - never leak a stack to the UI
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+    if not ok:
+        return jsonify({"ok": False, "error": error}), 400
+    return jsonify({"ok": True, "provider": pid, "warning": warning})
 
 
 @app.route("/shots/<run_id>")
