@@ -228,7 +228,7 @@ function fillVoices(d) {
   const nb = $("#voices-notable"); clearNode(nb);
   for (const v of (d.notable || [])) {
     const bucket = v.bucket || "neu";
-    const quote = truncate(stripUrls(v.text), 220);
+    const quote = v.capture ? v.capture : truncate(stripUrls(v.text), 220);
     if (!quote) continue;
     const card = elem("article", { class: "notable-card " + bucket },
       elem("div", { class: "nb-head" },
@@ -270,7 +270,7 @@ function showVoice(i) {
     v.url ? elem("a", { href: v.url, target: "_blank", rel: "noopener" }, "View post →") : null,
   );
   stage.appendChild(elem("div", { class: "voice-card" },
-    elem("div", { class: "vq" }, "“" + truncate(v.text, 220) + "”"),
+    elem("div", { class: "vq" }, "“" + (v.capture ? v.capture : truncate(stripUrls(v.text), 220)) + "”"),
     meta,
   ));
   document.querySelectorAll("#car-dots .dot").forEach((d, k) => d.classList.toggle("on", k === _vIdx));

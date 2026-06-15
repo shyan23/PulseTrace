@@ -25,6 +25,7 @@ from lib.orchestration.runner import run_graph_streamed
 from lib.briefing import build as build_briefing
 from lib.events import BUS, sse_format
 from lib.store import read_json, write_json, new_run_id, run_dir, ROOT
+from lib.voices import curate as curate_voices
 from lib.replay import frame as replay_frame, max_iter as replay_max_iter
 from lib.rag import ask as rag_ask
 from lib import backend, fb_cookies, docs as docs_mod
@@ -819,8 +820,15 @@ def _member_stance_map(run_id: str, match: dict, by_id: dict,
     return out
 
 
+_VOICES_VERSION = 2
+
+
 @app.route("/run/<run_id>/voices")
 def voices(run_id: str):
+    cached = read_json(run_id, "voices.json")
+    if isinstance(cached, dict) and cached.get("_v") == _VOICES_VERSION:
+        return jsonify(cached)
+
     clusters = read_json(run_id, "clusters.json") or []
     posts = read_json(run_id, "posts.json") or []
     by_id = {str(p.get("id")): p for p in posts}
@@ -861,17 +869,22 @@ def voices(run_id: str):
             agg[k] = round(agg[k] / total, 3)
 
     voices_pool.sort(key=lambda v: -(v["reactions"] or 0))
-    seen, carousel = set(), []
+    seen, deduped = set(), []
     for v in voices_pool:
         key = v["text"][:80]
         if key in seen:
             continue
         seen.add(key)
-        carousel.append(v)
+        deduped.append(v)
+
+    # Drop non-opinions (sale listings, blurbs, plot summaries) and condense the
+    # survivors into short captures; the original post stays behind v.url.
+    topic = (read_json(run_id, "run.json") or {}).get("topic", "")
+    curated = curate_voices(topic, deduped[:12])
 
     notable, used_buckets = [], {}
-    for v in carousel:
-        b = v["bucket"]
+    for v in curated:
+        b = v.get("bucket", "neu")
         if used_buckets.get(b, 0) >= 2:
             continue
         used_buckets[b] = used_buckets.get(b, 0) + 1
@@ -880,12 +893,15 @@ def voices(run_id: str):
             break
 
     themes.sort(key=lambda t: -t[0])
-    return jsonify({
+    result = {
         "sentiment": agg,
-        "voices": carousel[:12],
+        "voices": curated[:12],
         "notable": notable,
         "themes": [t[1] for t in themes[:4]],
-    })
+        "_v": _VOICES_VERSION,
+    }
+    write_json(run_id, "voices.json", result)
+    return jsonify(result)
 
 
 @app.route("/ask", methods=["POST"])
